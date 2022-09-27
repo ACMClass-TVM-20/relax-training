@@ -45,9 +45,8 @@ RELAY_REGISTER_OP("relax.nn.crossent")
     .set_num_inputs(2)
     .add_argument("e1", "Expr", "The input expression")
     .add_argument("e2", "Expr", "The input expression")
-    // use dense attr
-    .set_attr<FInferShape>("FInferShape", InferShapeDense)
-    .set_attr<FInferType>("FInferType", InferTypeDense);
+    .set_attr<FInferShape>("FInferShape", InferShapeCrossent)
+    .set_attr<FInferType>("FInferType", InferTypeCrossent);
 
 RELAY_REGISTER_OP("relax.nn.flatten")
     .set_num_inputs(1)

@@ -68,7 +68,7 @@ def map_softmax(bb, call):
 def map_crossent(bb, call):
     def _crossent(x, y):
         i = te.reduce_axis((0, 10), name="i")
-        result = te.compute(shape=(1,), fcompute=lambda j: te.sum(-y[0, i] * te.log(x[0, i]), axis=i), name="crossent")
+        result = te.compute(shape=(), fcompute=lambda : te.sum(-y[0, i] * te.log(x[0, i]), axis=i), name="crossent")
         return te.compute(shape=result.shape, fcompute=lambda *indices: te.if_then_else(te.isnan(result(*indices)), 0.0, result(*indices)), name="crossent_process")
     return bb.call_te(_crossent, call.args[0], call.args[1])
 

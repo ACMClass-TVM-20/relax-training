@@ -24,8 +24,10 @@ def n_layer_perceptron(layers, in_size, out_size, hidden_size):
 	# m = tir.Var("m", "int64")
 	# n = tir.Var("n", "int64")
 	# l = tir.Var("l", "int64")
-	vec_type = rx.DynTensorType(ndim=1, dtype="float32")
-	mat_type = rx.DynTensorType(ndim=2, dtype="float32")
+	# vec_type = rx.DynTensorType(ndim=1, dtype="float32")
+	# mat_type = rx.DynTensorType(ndim=2, dtype="float32")
+	vec_type = rx.DynTensorType(dtype="float32")
+	mat_type = rx.DynTensorType(dtype="float32")
 
 	input_list = [rx.Var("x", [1, in_size], mat_type)]
 	w_list = [rx.Var("w_0", [in_size, hidden_size], mat_type)] + \
@@ -42,12 +44,13 @@ def n_layer_perceptron(layers, in_size, out_size, hidden_size):
 				lv0 = bb.emit(relax.op.matmul(current, w_list[i]))
 				lv1 = bb.emit(relax.op.add(lv0, b_list[i]))
 				current = bb.emit(relax.op.nn.relu(lv1))
+				current1 = bb.call_tir()
 			gv0 = bb.emit_output(current)
 		bb.emit_func_output(gv0)
 	return bb.get()
 
 # model building -----------------------
-layers, in_size, out_size, hidden_size = 5, 784, 10, 128
+layers, in_size, out_size, hidden_size = 3, 2, 2, 2
 
 module = n_layer_perceptron(layers, in_size, out_size, hidden_size)
 module.show()
@@ -62,19 +65,19 @@ vm = relax.VirtualMachine(ex, tvm.cpu())
 # testing -----------------------
 
 
-# def rand_matrix_tvm(shape):
-# 	return tvm.nd.array(np.random.randint(2, size=shape).astype(np.float32))
+def rand_matrix_tvm(shape):
+	return tvm.nd.array(np.random.randint(3, size=shape).astype(np.float32))
 
-# input_list = [rand_matrix_tvm((1, in_size))]
-# w_list = [rand_matrix_tvm((in_size, hidden_size))] + \
-# 	[rand_matrix_tvm((hidden_size, hidden_size)) for i in range(layers - 2)] + \
-# 	[rand_matrix_tvm((hidden_size, out_size))]
-# b_list = [rand_matrix_tvm((hidden_size)) for i in range(layers - 1)] + \
-# 	[rand_matrix_tvm((out_size))]
+input_list = [rand_matrix_tvm((1, in_size))]
+w_list = [rand_matrix_tvm((in_size, hidden_size))] + \
+	[rand_matrix_tvm((hidden_size, hidden_size)) for i in range(layers - 2)] + \
+	[rand_matrix_tvm((hidden_size, out_size))]
+b_list = [rand_matrix_tvm((hidden_size)) for i in range(layers - 1)] + \
+	[rand_matrix_tvm((out_size))]
 
-# args = input_list + w_list + b_list
-# print(args)
+args = input_list + w_list + b_list
+print(args)
 
-# res = vm["MLP"](*args).numpy()
-# print("res:", res)
+res = vm["MLP"](*args).numpy()
+print("res:", res)
 
