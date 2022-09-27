@@ -110,5 +110,11 @@ Expr MakeUnique(Expr data, bool sorted, bool return_inverse, bool return_counts,
 
 TVM_REGISTER_GLOBAL("relax.op.unique").set_body_typed(MakeUnique);
 
+RELAY_REGISTER_OP("relax.transpose")
+    .set_num_inputs(1)
+    .add_argument("data", "Tensor", "The input tensor")
+    .set_attr<FInferShape>("FInferShape", InferShapeUnaryBroadcast)
+    .set_attr<FInferType>("FInferType", InferTypeUnaryBroadcast);
+
 }  // namespace relax
 }  // namespace tvm

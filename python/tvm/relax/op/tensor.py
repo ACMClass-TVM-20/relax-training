@@ -29,6 +29,9 @@ def add(lhs: Expr, rhs: Expr) -> Expr:
 def multiply(lhs: Expr, rhs: Expr) -> Expr:
     return _ffi_api.multiply(lhs, rhs)
 
+def matmul(lhs: Expr, rhs: Expr) -> Expr:
+    return _ffi_api.matmul(lhs, rhs)
+
 @tvm.register_func("relax.run.unique")
 def unique(
     a: tvm.nd.array,
