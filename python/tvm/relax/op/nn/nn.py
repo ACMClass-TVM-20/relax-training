@@ -53,4 +53,3 @@ def max_pool2d(data: Expr, kernel_size, stride=None, padding=(0, 0), dilation=(1
     if stride is None:
         stride = kernel_size
     return _make.max_pool2d(data, kernel_size, stride, padding, dilation)
-

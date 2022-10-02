@@ -123,4 +123,3 @@ class LowerToTensorIRPass:
     """The wrapper for the LowerTensorIR pass."""
     def transform_module(self, mod, ctx):
         return LowerToTensorIR(mod, op_map).transform()
-        

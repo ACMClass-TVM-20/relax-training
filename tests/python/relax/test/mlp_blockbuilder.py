@@ -80,4 +80,3 @@ print(args)
 
 res = vm["MLP"](*args).numpy()
 print("res:", res)
-
