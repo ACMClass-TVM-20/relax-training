@@ -42,14 +42,14 @@ print("Build mlp")
 def nn_relu(x):
     return np.maximum(x, 0.0)
 
-def nn_gradrelu(x):
+def nn_gradrelu_(x):
     return (x > 0)
 
 def nn_softmax(x):
     x = np.exp(x)
     return x / np.sum(x)
 
-def nn_crossent(x, y):
+def nn_cross_entropy(x, y):
     ret = np.sum(-np.log(x) * y)
     return 0.0 if np.isnan(ret) else ret
 
@@ -65,7 +65,7 @@ class AutoDiffMLP:
         lv3 = np.matmul(lv2, w1) # shape: (1, 10)
         out = np.add(lv3, b1)
         lv4 = nn_softmax(out)
-        loss = nn_crossent(lv4, label)
+        loss = nn_cross_entropy(lv4, label)
         # gradient
 
         # crossEnt-softMax derive
@@ -78,8 +78,8 @@ class AutoDiffMLP:
         lv2_adjoint = np.matmul(out_adjoint, w1_trans) # shape: (1, 128)
         w1_adjoint  = np.matmul(lv2_trans, out_adjoint) # shape: (128, 10)
 
-        lv1_gradrelu = nn_gradrelu(lv1) # shape: (1, 128)
-        lv1_adjoint  = np.multiply(lv2_adjoint, lv1_gradrelu) # shape: (1, 128)
+        lv1_gradrelu_ = nn_gradrelu_(lv1) # shape: (1, 128)
+        lv1_adjoint  = np.multiply(lv2_adjoint, lv1_gradrelu_) # shape: (1, 128)
 
         # b0_adjoint = lv1_adjoint
         # lv0_adjoint = lv1_adjoint

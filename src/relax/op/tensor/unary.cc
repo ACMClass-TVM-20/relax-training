@@ -85,6 +85,18 @@ Type InferTypeUnaryBroadcast(const Call& call, DiagnosticContext diag_ctx) {
   return GetRef<DynTensorType>(input_ty);
 }
 
+Optional<Expr> InferShapeTranspose(const Call& call, DiagnosticContext diag_ctx) {
+  if (call->args.size() != 1) {
+    diag_ctx.EmitFatal(Diagnostic::Error(call->span) << "Unary op should have 1 argument");
+  }
+  Expr shape = call->args[0]->shape();
+  if (auto* s = shape.as<ShapeExprNode>()) {
+    return ShapeExpr(Array<PrimExpr>{s->values[1], s->values[0]});
+  } else {
+    return NullOpt;
+  }
+}
+
 TVM_REGISTER_NODE_TYPE(UniqueAttrs);
 TVM_REGISTER_NODE_TYPE(MaxPool2dAttrs);
 RELAY_REGISTER_OP("relax.unique")
@@ -110,11 +122,11 @@ Expr MakeUnique(Expr data, bool sorted, bool return_inverse, bool return_counts,
 
 TVM_REGISTER_GLOBAL("relax.op.unique").set_body_typed(MakeUnique);
 
-RELAY_REGISTER_OP("relax.transpose")
-    .set_num_inputs(1)
-    .add_argument("data", "Tensor", "The input tensor")
-    .set_attr<FInferShape>("FInferShape", InferShapeUnaryBroadcast)
-    .set_attr<FInferType>("FInferType", InferTypeUnaryBroadcast);
+RELAX_REGISTER_UNARY_OP_BASE("transpose", InferShapeTranspose, InferTypeUnaryBroadcast);
+RELAX_REGISTER_UNARY_OP("log");
+RELAX_REGISTER_UNARY_OP("negative");
+RELAX_REGISTER_UNARY_OP("ones_like");
+RELAX_REGISTER_UNARY_OP("zeros_like");
 
 }  // namespace relax
 }  // namespace tvm

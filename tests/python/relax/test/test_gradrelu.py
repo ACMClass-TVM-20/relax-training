@@ -7,7 +7,7 @@ from tvm.script import tir as T
 from tvm.script import relax as R
 
 
-def nn_gradrelu(x):
+def nn_gradrelu_(x):
     return (x > 0)
 
 print("Build mlp")
@@ -21,14 +21,14 @@ print("TVM version: ", tvm.__version__)
 """
 
 @tvm.script.ir_module
-class TestGradRelu:
+class Testgradrelu_:
     @R.function
     def main(x: Tensor((3, 3), "float32")) -> Tensor(None, "float32", ndim=2):
         
         # block 0
         with R.dataflow():
             # linear0
-            out = relax.nn.gradrelu(x)
+            out = relax.nn.gradrelu_(x)
             R.output(out)
         return out
 

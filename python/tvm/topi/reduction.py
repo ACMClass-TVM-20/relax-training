@@ -248,3 +248,20 @@ def prod(data, axis=None, keepdims=False):
     ret : tvm.te.Tensor
     """
     return cpp.prod(data, axis, keepdims)
+
+
+def collapse_sum(data, target_shape):
+    """TODO
+
+    Parameters
+    ----------
+    data : tvm.te.Tensor
+        The input tvm tensor
+
+    
+
+    Returns
+    -------
+    ret : tvm.te.Tensor
+    """
+    return cpp.collapse_sum(data, target_shape)

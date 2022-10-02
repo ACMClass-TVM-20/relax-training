@@ -175,18 +175,9 @@ RELAX_REGISTER_BINARY_BROADCAST_OP("multiply")
     .describe("Elementwise multiply with broadcasting")
     .set_support_level(1);
 
-RELAY_REGISTER_OP("relax.matmul")
-    .describe("Matrix multiply")
-    .set_num_inputs(2)
-    .add_argument("e1", "Expr", "The input expression")
-    .add_argument("e2", "Expr", "The input expression")
-    .set_attr<FInferShape>("FInferShape", InferShapeMatmul)
-    .set_attr<FInferType>("FInferType", InferTypeMatmul);
 
-TVM_REGISTER_GLOBAL("relax.op.matmul").set_body_typed([](Expr e1, Expr e2) {
-    static const Op& op = Op::Get("relax.matmul");
-    return Call(op, {e1, e2}, Attrs(), {});
-});
+RELAX_REGISTER_BINARY_OP_BASE("matmul", InferShapeMatmul, InferTypeMatmul);
+
 
 }  // namespace relax
 }  // namespace tvm

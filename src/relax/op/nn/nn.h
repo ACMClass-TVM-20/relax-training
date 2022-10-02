@@ -119,7 +119,7 @@ Type InferTypeDense(const Call& call, DiagnosticContext diag_ctx) {
 }
 
 
-Optional<Expr> InferShapeCrossent(const Call& call, DiagnosticContext diag_ctx) {
+Optional<Expr> InferShapeCrossEntropy(const Call& call, DiagnosticContext diag_ctx) {
   if (call->args.size() != 2) {
     diag_ctx.EmitFatal(Diagnostic::Error(call->span) << "CrossEnt op should have 2 arguments");
   }
@@ -135,9 +135,9 @@ Optional<Expr> InferShapeCrossent(const Call& call, DiagnosticContext diag_ctx) 
 }
 
 
-Type InferTypeCrossent(const Call& call, DiagnosticContext diag_ctx) {
+Type InferTypeCrossEntropy(const Call& call, DiagnosticContext diag_ctx) {
   if (call->args.size() != 2) {
-    diag_ctx.EmitFatal(Diagnostic::Error(call->span) << "Crossent op should have 2 arguments");
+    diag_ctx.EmitFatal(Diagnostic::Error(call->span) << "CrossEntropy op should have 2 arguments");
   }
   Type type0 = call->args[0]->checked_type();
   Type type1 = call->args[1]->checked_type();
@@ -145,7 +145,7 @@ Type InferTypeCrossent(const Call& call, DiagnosticContext diag_ctx) {
   auto* t1 = type1.as<DynTensorTypeNode>();
   if (!t0 || !t1) {
     diag_ctx.EmitFatal(Diagnostic::Error(call->span)
-                       << "The 2 arguments of Crossent should be DynTensor");
+                       << "The 2 arguments of CrossEntropy should be DynTensor");
   }
 
   DataType output_dtype;
@@ -153,7 +153,7 @@ Type InferTypeCrossent(const Call& call, DiagnosticContext diag_ctx) {
     output_dtype = DataType::Void();
   } else if (t0->dtype != t1->dtype) {
     diag_ctx.EmitFatal(Diagnostic::Error(call->span) << "Data types " << t0->dtype << ", and"
-                                                     << t1->dtype << " must be equal for Crossent");
+                                                     << t1->dtype << " must be equal for CrossEntropy");
   } else {
     output_dtype = t0->dtype;
   }

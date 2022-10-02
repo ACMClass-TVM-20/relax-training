@@ -35,7 +35,7 @@ def n_layer_perceptron(layers, in_size, out_size, hidden_size):
 		[rx.Var("w_" + str(layers - 1), [hidden_size, out_size], mat_type)]
 	b_list = [rx.Var("b_" + str(i), [hidden_size], vec_type) for i in range(layers - 1)] + \
 		[rx.Var("b_" + str(layers - 1), [out_size], vec_type)]
-	
+
 	bb = rx.BlockBuilder()
 	with bb.function("MLP", input_list + w_list + b_list):
 		with bb.dataflow():
@@ -44,9 +44,9 @@ def n_layer_perceptron(layers, in_size, out_size, hidden_size):
 				lv0 = bb.emit(relax.op.matmul(current, w_list[i]))
 				lv1 = bb.emit(relax.op.add(lv0, b_list[i]))
 				current = bb.emit(relax.op.nn.relu(lv1))
-				current1 = bb.call_tir()
 			gv0 = bb.emit_output(current)
-		bb.emit_func_output(gv0)
+		lv2 = bb.emit(relax.op.add(lv1, b_list[0]))
+		bb.emit_func_output(lv2)
 	return bb.get()
 
 # model building -----------------------

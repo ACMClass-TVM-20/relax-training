@@ -5,6 +5,7 @@ from tvm.ir.module import IRModule
 from tvm import topi, relax, te
 from tvm.script import tir as T
 from tvm.script import relax as R
+import _gradient
 
 
 @relax.expr_functor.mutator
@@ -54,10 +55,10 @@ def map_transpose(bb, call):
 def map_relu(bb, call):
     return bb.call_te(topi.nn.relu, call.args[0])
 
-def map_gradrelu(bb, call):
-    def _gradrelu(x):
-        return te.compute(shape=x.shape, fcompute=lambda *indices: te.if_then_else(x(*indices)>0, 1.0, 0.0), name="gradrelu")
-    return bb.call_te(_gradrelu, call.args[0])
+def map_gradrelu_(bb, call):
+    def _gradrelu_(x):
+        return te.compute(shape=x.shape, fcompute=lambda *indices: te.if_then_else(x(*indices)>0, 1.0, 0.0), name="gradrelu_")
+    return bb.call_te(_gradrelu_, call.args[0])
 
 def map_matmul(bb, call):
     return bb.call_te(topi.matmul, call.args[0], call.args[1])
@@ -65,12 +66,40 @@ def map_matmul(bb, call):
 def map_softmax(bb, call):
     return bb.call_te(topi.nn.softmax, call.args[0])
 
-def map_crossent(bb, call):
-    def _crossent(x, y):
-        i = te.reduce_axis((0, 10), name="i")
-        result = te.compute(shape=(), fcompute=lambda : te.sum(-y[0, i] * te.log(x[0, i]), axis=i), name="crossent")
-        return te.compute(shape=result.shape, fcompute=lambda *indices: te.if_then_else(te.isnan(result(*indices)), 0.0, result(*indices)), name="crossent_process")
-    return bb.call_te(_crossent, call.args[0], call.args[1])
+def te_cross_entropy(x, y):
+    # i = te.reduce_axis((0, 10), name="i")
+    # result = te.compute(shape=(), fcompute=lambda : te.sum(-y[0, i] * te.log(x[0, i]), axis=i), name="cross_entropy")
+    # return te.compute(shape=result.shape, fcompute=lambda *indices: te.if_then_else(te.isnan(result(*indices)), 0.0, result(*indices)), name="crossent_process")
+    return -topi.sum(topi.log(x) * y)
+
+def map_cross_entropy(bb, call):
+    return bb.call_te(te_cross_entropy, call.args[0], call.args[1])
+
+def map_softmax_cross_entropy(bb, call):
+    func = lambda x, y: te_cross_entropy(topi.nn.softmax(x), y)
+    return bb.call_te(func, call.args[0], call.args[1])
+
+def map_negative(bb, call):
+    return bb.call_te(topi.negative, call.args[0])
+
+def map_log(bb, call):
+    return bb.call_te(topi.log, call.args[0])
+
+def map_ones_like(bb, call):
+    def te_ones_like(x):
+        return topi.full_like(x, 1.0)
+    return bb.call_te(te_ones_like, call.args[0])
+
+def map_zeros_like(bb, call):
+    def te_zeros_like(x):
+        return topi.full_like(x, 0.0)
+    return bb.call_te(te_zeros_like, call.args[0])
+
+def map_collapse_sum_like(bb, call):
+    def te_collapse_sum_like(x, y):
+        return topi.collapse_sum_like(x, y.shape)
+    return bb.call_te(te_collapse_sum_like, call.args[0], call.args[1])
+
 
 op_map = {
   "relax.nn.dense": map_dense,
@@ -79,10 +108,14 @@ op_map = {
   "relax.multiply": map_multiply,
   "relax.transpose": map_transpose,
   "relax.nn.relu": map_relu,
-  "relax.nn.gradrelu": map_gradrelu,
+  "relax.nn.gradrelu_": map_gradrelu_,
   "relax.matmul": map_matmul,
   "relax.nn.softmax": map_softmax,
-  "relax.nn.crossent": map_crossent
+  "relax.nn.cross_entropy": map_cross_entropy,
+  "relax.nn.softmax_cross_entropy": map_softmax_cross_entropy,
+  "relax.negative": map_negative,
+  "relax.ones_like": map_ones_like,
+  "relax.zeros_like": map_zeros_like,
 }
 
 @tvm.ir.transform.module_pass(opt_level=0, name="LowerToTensorIR")
@@ -90,3 +123,4 @@ class LowerToTensorIRPass:
     """The wrapper for the LowerTensorIR pass."""
     def transform_module(self, mod, ctx):
         return LowerToTensorIR(mod, op_map).transform()
+        

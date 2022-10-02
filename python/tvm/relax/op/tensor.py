@@ -25,12 +25,32 @@ from ..expr import Expr
 def add(lhs: Expr, rhs: Expr) -> Expr:
     return _ffi_api.add(lhs, rhs)
 
+def sub(lhs: Expr, rhs: Expr) -> Expr:
+    return _ffi_api.sub(lhs, rhs)
 
 def multiply(lhs: Expr, rhs: Expr) -> Expr:
     return _ffi_api.multiply(lhs, rhs)
 
 def matmul(lhs: Expr, rhs: Expr) -> Expr:
     return _ffi_api.matmul(lhs, rhs)
+
+def collapse_sum_like(lhs: Expr, rhs: Expr) -> Expr:
+    return _ffi_api.collapse_sum_like(lhs, rhs)
+
+def log(lhs: Expr) -> Expr:
+    return _ffi_api.log(lhs)
+
+def ones_like(lhs: Expr) -> Expr:
+    return _ffi_api.log(lhs)
+
+def zeros_like(lhs: Expr) -> Expr:
+    return _ffi_api.log(lhs)
+
+def negative(lhs: Expr) -> Expr:
+    return _ffi_api.negative(lhs)
+
+def transpose(lhs: Expr) -> Expr:
+    return _ffi_api.transpose(lhs)
 
 @tvm.register_func("relax.run.unique")
 def unique(

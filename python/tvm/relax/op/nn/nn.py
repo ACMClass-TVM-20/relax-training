@@ -36,6 +36,14 @@ def relu(data: Expr) -> Expr:
 def softmax(data: Expr) -> Expr:
     return _make.softmax(data)
 
+def gradrelu_(data: Expr) -> Expr:
+    return _make.gradrelu_(data)
+
+def cross_entropy(lhs: Expr, rhs: Expr) -> Expr:
+    return _make.cross_entropy(lhs, rhs)
+
+def softmax_cross_entropy(lhs: Expr, rhs: Expr) -> Expr:
+    return _make.softmax_cross_entropy(lhs, rhs)
 
 def flatten(data: Expr) -> Expr:
     return _make.flatten(data)
