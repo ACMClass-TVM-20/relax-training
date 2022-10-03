@@ -51,7 +51,7 @@ def relu_grad(orig, grad):
 	return [multiply(grad, gradrelu_(orig.args[0]))]
 
 
-@register_gradient("relax.nn.matmul")
+@register_gradient("relax.matmul")
 def matmul_grad(orig, grad):
 	"""Returns [grad' @ tensor_b, tensor_a @ grad']"""
 	tensor_a, tensor_b = orig.args
