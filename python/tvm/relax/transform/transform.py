@@ -18,6 +18,7 @@
 """Relax transformation passes."""
 import functools
 import inspect
+from tkinter import N
 import types
 from typing import Callable, Dict, Union, Optional, List
 import numpy as np
@@ -337,6 +338,39 @@ def FuseTIR() -> tvm.ir.transform.Pass:
         The registered pass for tir fusion.
     """
     return _ffi_api.FuseTIR()
+
+
+def SimpleAD(func_name = "", target_names = [], require_grad_names = []) -> tvm.ir.transform.Pass:
+    """Simple high level reverse-mode auto-differentiation.
+
+    Returns
+    -------
+    ret: tvm.ir.transform.Pass
+    """
+
+    if func_name is None:
+        func_name = ""
+    if target_names is None:
+        target_names = []
+    if require_grad_names is None:
+        require_grad_names = []
+
+    if not isinstance(target_names, list):
+        target_names = [target_names]
+    if not isinstance(require_grad_names, list):
+        require_grad_names = [require_grad_names]
+
+    for i in range(len(target_names)):
+        if not isinstance(target_names[i], str):
+            assert isinstance(target_names[i], tvm.relax.expr.Var)
+            target_names[i] = target_names[i].name_hint
+    for i in range(len(require_grad_names)):
+        if not isinstance(require_grad_names[i], str):
+            print(type(require_grad_names[i]), require_grad_names[i])
+            assert isinstance(require_grad_names[i], tvm.relax.expr.Var)
+            require_grad_names[i] = require_grad_names[i].name_hint
+
+    return _ffi_api.SimpleAD(func_name, target_names, require_grad_names)
 
 
 def _wrap_class_function_pass(pass_cls, pass_info):
