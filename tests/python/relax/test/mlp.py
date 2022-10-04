@@ -11,7 +11,7 @@ import torch
 import torchvision
 # import matplotlib.pyplot as plt
 import pickle as pkl
-
+np.random.seed(1)
 test_data = torchvision.datasets.FashionMNIST(
     root="data",
     train=False,

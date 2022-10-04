@@ -63,8 +63,11 @@ def map_gradrelu_(bb, call):
 def map_matmul(bb, call):
     return bb.call_te(topi.matmul, call.args[0], call.args[1])
 
+def te_softmax(x):
+    return topi.nn.softmax(x, 1)
+
 def map_softmax(bb, call):
-    return bb.call_te(topi.nn.softmax, call.args[0])
+    return bb.call_te(te_softmax, call.args[0])
 
 def te_cross_entropy(x, y):
     # i = te.reduce_axis((0, 10), name="i")
@@ -76,7 +79,7 @@ def map_cross_entropy(bb, call):
     return bb.call_te(te_cross_entropy, call.args[0], call.args[1])
 
 def map_softmax_cross_entropy(bb, call):
-    func = lambda x, y: te_cross_entropy(topi.nn.softmax(x), y)
+    func = lambda x, y: te_cross_entropy(topi.nn.softmax(x, 1), y)
     return bb.call_te(func, call.args[0], call.args[1])
 
 def map_negative(bb, call):
@@ -116,7 +119,7 @@ op_map = {
   "relax.negative": map_negative,
   "relax.ones_like": map_ones_like,
   "relax.zeros_like": map_zeros_like,
-  "relax.collapse_sum_like": map_collapse_sum_like
+  "relax.collapse_sum_like": map_collapse_sum_like,
 }
 
 @tvm.ir.transform.module_pass(opt_level=0, name="LowerToTensorIR")

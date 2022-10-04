@@ -220,7 +220,7 @@ IRModule SimpleAD(IRModule m, String func_name, const Array<String>& target_name
     if (const auto* relax_f = func_pr.second.as<FunctionNode>()) {
       Optional<String> gsymbol = relax_f->GetAttr<String>(tvm::attr::kGlobalSymbol);
       if (gsymbol.defined() && (func_name.empty() || gsymbol.value() == func_name)) {
-        Function f_after = Downcast<Function>(mutator.VisitExpr_(relax_f));
+        Function f_after = Downcast<Function>(mutator.VisitExpr(func_pr.second));
         new_module->Update(func_pr.first, f_after);
       }
     }

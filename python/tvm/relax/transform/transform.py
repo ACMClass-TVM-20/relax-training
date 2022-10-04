@@ -340,7 +340,7 @@ def FuseTIR() -> tvm.ir.transform.Pass:
     return _ffi_api.FuseTIR()
 
 
-def SimpleAD(func_name = "", target_names = [], require_grad_names = []) -> tvm.ir.transform.Pass:
+def SimpleAD(func_name, target_names = [], require_grad_names = []) -> tvm.ir.transform.Pass:
     """Simple high level reverse-mode auto-differentiation.
 
     Returns
@@ -348,8 +348,6 @@ def SimpleAD(func_name = "", target_names = [], require_grad_names = []) -> tvm.
     ret: tvm.ir.transform.Pass
     """
 
-    if func_name is None:
-        func_name = ""
     if target_names is None:
         target_names = []
     if require_grad_names is None:

@@ -79,4 +79,5 @@ def matmul_grad(orig, grad):
 @register_gradient("relax.nn.softmax_cross_entropy")
 def softmax_cross_entropy_grad(orig, grad):
 	y_hat = softmax(orig.args[0])
-	return [sub(y_hat, orig.args[1]), negative(log(y_hat))]
+	return [multiply(grad, sub(y_hat, orig.args[1])), multiply(grad, negative(log(y_hat)))]
+	# return [sub(y_hat, orig.args[1]), negative(log(y_hat))]
