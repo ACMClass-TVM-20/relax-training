@@ -36,17 +36,13 @@ class SimpleADMutator : public ExprMutator {
     ExprMutator(mod), target_names_(), require_grad_names_() {
         for (const String& name: target_names) {
             target_names_.emplace(name);
-            VLOG(2) << "target_names inserted: " << name << std::endl;
         }
         for (const String& name: require_grad_names) {
             require_grad_names_.emplace(name);
-            VLOG(2) << "require_grad_names inserted: " << name << std::endl;
         }
     }
 
     Expr VisitExpr_(const FunctionNode* node) override {
-        VLOG(2) << "visit function: " << GetRef<Expr>(node) << std::endl;
-
         ICHECK(node->body->IsInstance<SeqExprNode>());
         const SeqExprNode* seq_expr = node->body.as<SeqExprNode>();
         // only a single dataflow block
@@ -219,7 +215,7 @@ IRModule SimpleAD(IRModule m, String func_name, const Array<String>& target_name
   for (const auto& func_pr : m->functions) {
     if (const auto* relax_f = func_pr.second.as<FunctionNode>()) {
       Optional<String> gsymbol = relax_f->GetAttr<String>(tvm::attr::kGlobalSymbol);
-      if (gsymbol.defined() && (func_name.empty() || gsymbol.value() == func_name)) {
+      if (gsymbol.defined() && gsymbol.value() == func_name) {
         Function f_after = Downcast<Function>(mutator.VisitExpr(func_pr.second));
         new_module->Update(func_pr.first, f_after);
       }
