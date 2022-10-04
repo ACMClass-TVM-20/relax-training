@@ -69,14 +69,14 @@ def build_vm(layers, in_size, out_size, hidden_size, batch_size=1):
 # layers, in_size, out_size, hidden_size, batch_size = 2, 2, 2, 2, 3
 # vm = build_vm(layers, in_size, out_size, hidden_size, batch_size)
 # def rand_matrix_tvm(shape):
-# 	return tvm.nd.array(np.random.randint(5, size=shape).astype(np.float32))
+#     return tvm.nd.array(np.random.randint(5, size=shape).astype(np.float32))
 
 # input_list = [rand_matrix_tvm((batch_size, in_size))]
 # w_list = [rand_matrix_tvm((in_size, hidden_size))] + \
-# 	[rand_matrix_tvm((hidden_size, hidden_size)) for i in range(layers - 2)] + \
-# 	[rand_matrix_tvm((hidden_size, out_size))]
+#     [rand_matrix_tvm((hidden_size, hidden_size)) for i in range(layers - 2)] + \
+#     [rand_matrix_tvm((hidden_size, out_size))]
 # b_list = [rand_matrix_tvm((hidden_size)) for i in range(layers - 1)] + \
-# 	[rand_matrix_tvm((out_size))]
+#     [rand_matrix_tvm((out_size))]
 # label_list = [rand_matrix_tvm((batch_size, out_size))]
 
 # args = input_list + w_list + b_list + label_list
@@ -85,9 +85,9 @@ def build_vm(layers, in_size, out_size, hidden_size, batch_size=1):
 
 # res = vm["MLP"](*args)
 # for i in res[0]:
-# 	print("res:", i)
+#     print("res:", i)
 # for i in res[1:]:
-# 	print("grad:", i)
+#     print("grad:", i)
 
 
 # Model Tests ......
@@ -140,6 +140,9 @@ epoch = 0
 
 time0 = time.perf_counter()
 
+data_len = len(loader)
+train_data_threshold = int(data_len * 0.9)
+
 for img, label in loader:
     # print(img.shape)
     if img.shape[0] != batch_size:
@@ -150,10 +153,6 @@ for img, label in loader:
     output, *grads = vm["MLP"](*args)
     output, loss = output[0], output[1]
     pred_kind = np.argmax(output.numpy(), axis=1)
-    total += batch_size
-    success += np.count_nonzero(pred_kind == label.numpy())
-    # if pred_kind[0] == label[0]:
-    #     success += 1
     
     """
     print("label: ", label_nd)
@@ -166,17 +165,20 @@ for img, label in loader:
     """
 
     epoch += 1
-    
-    print("epoch={}, loss={}".format(epoch, loss.numpy()))
+    if epoch < train_data_threshold:
+        print("epoch={}, loss={}".format(epoch, loss.numpy()))
 
-    cnt = 0
-    for i in range(len(w_list)):
-        w_list[i] -= lr * grads[cnt].numpy() / batch_size
-        cnt += 1
-    for i in range(len(b_list)):
-        b_list[i] -= lr * grads[cnt].numpy() / batch_size
-        cnt += 1
+        cnt = 0
+        for i in range(len(w_list)):
+            w_list[i] -= lr * grads[cnt].numpy() / batch_size
+            cnt += 1
+        for i in range(len(b_list)):
+            b_list[i] -= lr * grads[cnt].numpy() / batch_size
+            cnt += 1
+    else:
+        total += batch_size
+        success += np.count_nonzero(pred_kind == label.numpy())
     
 
-print("Prediction Rate: ", success / total)
+print("Prediction Rate On TestSet: ", success / total)
 print("time: ", time.perf_counter() - time0)
