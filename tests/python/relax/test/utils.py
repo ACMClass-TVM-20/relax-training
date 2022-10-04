@@ -97,7 +97,7 @@ def map_zeros_like(bb, call):
 
 def map_collapse_sum_like(bb, call):
     def te_collapse_sum_like(x, y):
-        return topi.collapse_sum_like(x, y.shape)
+        return topi.collapse_sum(x, y.shape)
     return bb.call_te(te_collapse_sum_like, call.args[0], call.args[1])
 
 
@@ -116,6 +116,7 @@ op_map = {
   "relax.negative": map_negative,
   "relax.ones_like": map_ones_like,
   "relax.zeros_like": map_zeros_like,
+  "relax.collapse_sum_like": map_collapse_sum_like
 }
 
 @tvm.ir.transform.module_pass(opt_level=0, name="LowerToTensorIR")

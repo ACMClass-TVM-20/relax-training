@@ -130,12 +130,14 @@ MultiLayerPerceptron.show()
 
 # # print(dump_ast(AutoDiffMLP["main"]))
 
-# TIRModule = LowerToTensorIRPass()(AutoDiffMLP)
+AutoDiffMLP = relax.transform.SimpleAD(func_name="main", target_names="loss", require_grad_names=["w0", "b0", "w1", "b1"])(MultiLayerPerceptron)
+# AutoDiffMLP.show()
+TIRModule = LowerToTensorIRPass()(AutoDiffMLP)
 # TIRModule.show()
 
-# # build and run
-# ex = relax.vm.build(TIRModule, target="llvm")
-# vm = relax.VirtualMachine(ex, tvm.cpu())
+# build and run
+ex = relax.vm.build(TIRModule, target="llvm")
+vm = relax.VirtualMachine(ex, tvm.cpu())
 
 # """
 #     train
@@ -152,54 +154,51 @@ MultiLayerPerceptron.show()
 # print("True: ", class_names[label[0]])
 # """
 
-# success, total = 0, 0
-# lr = 0.03
+success, total = 0, 0
+lr = 0.03
 
-# batch_size = 64
-# total_loss = 0
-# epoch = 0
-# gradient_dict = {}
-# arg_names = ["w0", "b0", "w1", "b1"]
-# for arg in arg_names:
-#     gradient_dict[arg] = 0
+batch_size = 64
+total_loss = 0
+epoch = 0
+gradient_dict = {}
+arg_names = ["w0", "b0", "w1", "b1"]
+for arg in arg_names:
+    gradient_dict[arg] = 0
 
-# for img, label in loader:
-#     nd_params = {k: tvm.nd.array(v) for k, v in mlp_params.items()}
-#     data_nd = tvm.nd.array(img.reshape(1, 784))
-#     label_nd = tvm.nd.array(np.array([[1 if i == label[0] else 0 for i in range(10)]]).astype(np.float32))
-#     output, loss, w0_grad, b0_grad, w1_grad, b1_grad = vm["main"](data_nd, nd_params["w0"], nd_params["b0"], nd_params["w1"], nd_params["b1"], label_nd)
-#     pred_kind = np.argmax(output.numpy(), axis=1)
-#     total += 1
-#     if pred_kind[0] == label[0]:
-#         success += 1
+for img, label in loader:
+    nd_params = {k: tvm.nd.array(v) for k, v in mlp_params.items()}
+    data_nd = tvm.nd.array(img.reshape(1, 784))
+    label_nd = tvm.nd.array(np.array([[1 if i == label[0] else 0 for i in range(10)]]).astype(np.float32))
+    output, w0_grad, b0_grad, w1_grad, b1_grad = vm["main"](data_nd, nd_params["w0"], nd_params["b0"], nd_params["w1"], nd_params["b1"], label_nd)
+    pred_kind = np.argmax(output[0].numpy(), axis=1)
+    total += 1
+    if pred_kind[0] == label[0]:
+        success += 1
     
-#     """
-#     print("label: ", label_nd)
-#     print("output:", output)
-#     print("loss:", loss)
-#     print("w0_grad", w0_grad)
-#     print("b0_grad", b0_grad)
-#     print("w1_grad", w1_grad)
-#     print("b1_grad", b1_grad)
-#     """
+    # print("label: ", label_nd)
+    # print("output:", output[0])
+    # print("loss:", output[1])
+    # print("w0_grad", w0_grad)
+    # print("b0_grad", b0_grad)
+    # print("w1_grad", w1_grad)
+    # print("b1_grad", b1_grad)
+    # break
 
-#     epoch += 1
-#     total_loss += loss.numpy() #[0][0]
-#     b0_grad_numpy = b0_grad.numpy()
-#     b1_grad_numpy = b1_grad.numpy()
-#     gradient_dict["w0"] += w0_grad.numpy()
-#     gradient_dict["b0"] += b0_grad_numpy.reshape(b0_grad_numpy.shape[1])
-#     gradient_dict["w1"]    += w1_grad.numpy()
-#     gradient_dict["b1"]    += b1_grad_numpy.reshape(b1_grad_numpy.shape[1])
+    epoch += 1
+    total_loss += output[1].numpy()
+    gradient_dict["w0"] += w0_grad.numpy()
+    gradient_dict["b0"] += b0_grad.numpy()
+    gradient_dict["w1"] += w1_grad.numpy()
+    gradient_dict["b1"] += b1_grad.numpy()
 
-#     if epoch % batch_size == 0:
-#         print("epoch={}, loss={}".format(epoch, total_loss))
+    if epoch % batch_size == 0:
+        print("epoch={}, loss={}".format(epoch, total_loss))
 
-#         for arg in gradient_dict:
-#             mlp_params[arg] -= lr * (gradient_dict[arg] / batch_size)
-#             gradient_dict[arg] = 0
+        for arg in gradient_dict:
+            mlp_params[arg] -= lr * (gradient_dict[arg] / batch_size)
+            gradient_dict[arg] = 0
 
-#         total_loss = 0
+        total_loss = 0
     
 
-# print("Prediction Rate: ", float(success)/float(total))
+print("Prediction Rate: ", float(success)/float(total))

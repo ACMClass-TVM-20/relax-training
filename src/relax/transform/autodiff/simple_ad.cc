@@ -60,7 +60,6 @@ class SimpleADMutator : public ExprMutator {
             EmitBinding(binding);
         }
 
-
         for (const auto& v: node->params) {
             if (require_grad_names_.empty() || require_grad_names_.count(v->name_hint())) {
                 CreateAdjointVar(v, false);
