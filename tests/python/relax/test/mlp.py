@@ -54,6 +54,10 @@ print("TVM version: ", tvm.__version__)
 
 @tvm.script.ir_module
 class MultiLayerPerceptron:
+    @R.register_gradient("matmul")
+    @T.p
+    # def grad(y, x1, x2, x3,  o1, o2, o3)
+
     @R.function
     def main(x: Tensor((1, 784), "float32"),
              w0: Tensor((784, 128), "float32"),

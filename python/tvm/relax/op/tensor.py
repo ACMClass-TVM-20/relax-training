@@ -41,10 +41,10 @@ def log(lhs: Expr) -> Expr:
     return _ffi_api.log(lhs)
 
 def ones_like(lhs: Expr) -> Expr:
-    return _ffi_api.log(lhs)
+    return _ffi_api.ones_like(lhs)
 
 def zeros_like(lhs: Expr) -> Expr:
-    return _ffi_api.log(lhs)
+    return _ffi_api.zeros_like(lhs)
 
 def negative(lhs: Expr) -> Expr:
     return _ffi_api.negative(lhs)

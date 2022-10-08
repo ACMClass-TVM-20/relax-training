@@ -125,7 +125,7 @@ Optional<Expr> InferShapeMatmul(const Call& call, DiagnosticContext diag_ctx) {
       diag_ctx.EmitFatal(Diagnostic::Error(call->span)
                          << "The number of columns of the first argument must equal to the number of rows of the second argument");
     }
-    return ShapeExpr(Array<PrimExpr>{s0->values[0], s1->values[0]});
+    return ShapeExpr(Array<PrimExpr>{s0->values[0], s1->values[1]});
   } else {
     return NullOpt;
   }

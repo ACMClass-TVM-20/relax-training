@@ -73,10 +73,9 @@ class SimpleADMutator : public ExprMutator {
         }
 
         // handle the return
-        Array<Expr> out_expr, out_shape;
-        Array<Type> ret_type;
+        Array<Expr> out_expr, out_adjoints;
+        Array<Type> ret_type, out_adjoints_type;
         out_expr.push_back(seq_expr->body);
-        out_shape.push_back(seq_expr->body->shape());
         ret_type.push_back(node->ret_type);
 
         // emit the input adjoints
@@ -84,11 +83,13 @@ class SimpleADMutator : public ExprMutator {
             if (require_grad_names_.empty() || require_grad_names_.count(param->name_hint())) {
                 const Var& adjoint_var = adjoint_var_map[param];
                 BindAndEmit(adjoint_var, adjoint_expr_map[param]);
-                out_expr.push_back(adjoint_var);
-                out_shape.push_back(adjoint_var->shape());
-                ret_type.push_back(adjoint_var->checked_type());
+                out_adjoints.push_back(adjoint_var);
+                out_adjoints_type.push_back(adjoint_var->checked_type());
             }
         }
+
+        out_expr.push_back(Tuple(out_adjoints));
+        ret_type.push_back(TupleType(out_adjoints_type));
 
         return Function(node->params, SeqExpr({builder_->EndBlock()}, Tuple(out_expr)), TupleType(ret_type), node->attrs);
     }
