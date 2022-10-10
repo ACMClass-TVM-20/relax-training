@@ -340,35 +340,45 @@ def FuseTIR() -> tvm.ir.transform.Pass:
     return _ffi_api.FuseTIR()
 
 
-def SimpleAD(func_name, target_names = [], require_grad_names = []) -> tvm.ir.transform.Pass:
+def SimpleAD(func_name = "", target = "", require_grads = []) -> tvm.ir.transform.Pass:
     """Simple high level reverse-mode auto-differentiation.
+
+    Parameters
+    ----------
+    func_name: str
+        The function name to be pass.
+    target: Union[str, relax.Var]
+        The relax variable serves as target in the differentiation.
+        If it is None or empty, the body of seq expr will be the target.
+    require_grads: List[Union[str, relax.Var]]
+        The relax variables which need adjoints. Must be inputs.
+        If the list is empty, it will emit an adjoint for each input.
 
     Returns
     -------
     ret: tvm.ir.transform.Pass
     """
 
-    if target_names is None:
-        target_names = []
-    if require_grad_names is None:
-        require_grad_names = []
+    if func_name is None:
+        func_name = ""
+    if target is None:
+        target = ""
+    if require_grads is None:
+        require_grads = []
 
-    if not isinstance(target_names, list):
-        target_names = [target_names]
-    if not isinstance(require_grad_names, list):
-        require_grad_names = [require_grad_names]
+    if not isinstance(require_grads, list):
+        require_grads = [require_grads]
 
-    for i in range(len(target_names)):
-        if not isinstance(target_names[i], str):
-            assert isinstance(target_names[i], tvm.relax.expr.Var)
-            target_names[i] = target_names[i].name_hint
-    for i in range(len(require_grad_names)):
-        if not isinstance(require_grad_names[i], str):
-            print(type(require_grad_names[i]), require_grad_names[i])
-            assert isinstance(require_grad_names[i], tvm.relax.expr.Var)
-            require_grad_names[i] = require_grad_names[i].name_hint
+    if not isinstance(target, str):
+        assert isinstance(target, tvm.relax.expr.Var)
+        target = target.name_hint
+    for i in range(len(require_grads)):
+        if not isinstance(require_grads[i], str):
+            print(type(require_grads[i]), require_grads[i])
+            assert isinstance(require_grads[i], tvm.relax.expr.Var)
+            require_grads[i] = require_grads[i].name_hint
 
-    return _ffi_api.SimpleAD(func_name, target_names, require_grad_names)
+    return _ffi_api.SimpleAD(func_name, target, require_grads)
 
 
 def _wrap_class_function_pass(pass_cls, pass_info):

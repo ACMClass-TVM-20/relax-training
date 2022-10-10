@@ -32,14 +32,12 @@ namespace relax {
 
 class SimpleADMutator : public ExprMutator {
   public:
-    explicit SimpleADMutator(IRModule mod, const Array<String>& target_names, const Array<String>& require_grad_names):
-    ExprMutator(mod), target_names_(), require_grad_names_() {
-        for (const String& name: target_names) {
-            target_names_.emplace(name);
-        }
+    explicit SimpleADMutator(IRModule mod, const String& target_name, const Array<String>& require_grad_names):
+    ExprMutator(mod), target_name_(target_name), require_grad_names_() {
         for (const String& name: require_grad_names) {
             require_grad_names_.emplace(name);
         }
+        VLOG(2) << "AD target: " << target_name_ << std::endl;
     }
 
     Expr VisitExpr_(const FunctionNode* node) override {
@@ -62,6 +60,19 @@ class SimpleADMutator : public ExprMutator {
             }
             else {
                 CreateAdjointVar(v, true);
+            }
+        }
+
+        // if target is not specified
+        if (target_name_.empty()) {
+            if (const auto* node = seq_expr->body.as<VarNode>()) {
+                const Var& body_var = GetRef<Var>(node);
+                CheckTarget(body_var);
+                CreateAdjointVar(body_var, true);
+                InitGrad(adjoint_var_map[body_var], body_var);
+            }
+            else {
+                LOG(FATAL) << "the body of the function (the default target) is not a relax.Var" << std::endl;
             }
         }
 
@@ -100,12 +111,12 @@ class SimpleADMutator : public ExprMutator {
 
         // must be output or expr in ignored output's AST
         if (adjoint_expr_map.count(binding->var) == 0) {
-            if (!target_names_.empty() && target_names_.count(binding->var->name_hint()) == 0) {
+            if (target_name_.empty() || target_name_ != binding->var->name_hint()) {
                 return;
             }
-            ICHECK(!binding->var->IsInstance<DataflowVarNode>()) << "not an output node";
-            const Op& init_op = Op::Get("relax.ones_like");
-            BindAndEmit(adjoint_var, Call(init_op, {binding->var}));
+            // if target is specified
+            CheckTarget(binding->var);
+            InitGrad(adjoint_var, binding->var);
         }
         else {
             // meet a def
@@ -197,9 +208,25 @@ class SimpleADMutator : public ExprMutator {
         }
     }
 
+    void CheckTarget(const Expr& e) {
+        ICHECK(!e->IsInstance<DataflowVarNode>()) << "not an output node";
+        ICHECK(e->checked_type_.as<DynTensorTypeNode>()) << "target must be a DynTensorType" << std::endl;
+        VLOG(2) << "trace target type: " << e->checked_type_ << std::endl;
+        ICHECK(e->shape().as<ShapeExprNode>()) << "error when getting target shape" << std::endl;
+        const auto* shape_node = e->shape().as<ShapeExprNode>();
+        VLOG(2) << "trace target shape: " << shape_node->values << std::endl;
+        ICHECK(shape_node->values.size() == 0) << "target must be a scalar" << std::endl;
+    }
+
+    void InitGrad(const Var& adjoint_var, const Var& var) {
+        const Op& init_op = Op::Get("relax.ones_like");
+        BindAndEmit(adjoint_var, Call(init_op, {var}));
+    }
+
   private:
     // specified sets
-    std::unordered_set<String> target_names_, require_grad_names_;
+    String target_name_;
+    std::unordered_set<String> require_grad_names_;
 
     // var to its adjoints var
     Map<Var, Var> adjoint_var_map;
@@ -210,9 +237,9 @@ class SimpleADMutator : public ExprMutator {
     const OpAttrMap<relay::FPrimalGradient> gradient_op_map = Op::GetAttrMap<relay::FPrimalGradient>("FPrimalGradient");
 };
 
-IRModule SimpleAD(IRModule m, String func_name, const Array<String>& target_names, const Array<String>& require_grad_names) {
+IRModule SimpleAD(IRModule m, const String& func_name, const String& target_name, const Array<String>& require_grad_names) {
   IRModuleNode* new_module = m.CopyOnWrite();
-  auto mutator = SimpleADMutator(GetRef<IRModule>(new_module), target_names, require_grad_names);
+  auto mutator = SimpleADMutator(GetRef<IRModule>(new_module), target_name, require_grad_names);
   for (const auto& func_pr : m->functions) {
     if (const auto* relax_f = func_pr.second.as<FunctionNode>()) {
       Optional<String> gsymbol = relax_f->GetAttr<String>(tvm::attr::kGlobalSymbol);
@@ -227,10 +254,10 @@ IRModule SimpleAD(IRModule m, String func_name, const Array<String>& target_name
 
 namespace transform {
 
-Pass SimpleAD(String func_name, Array<String> target_names, Array<String> require_grad_names) {
+Pass SimpleAD(String func_name, String target_name, Array<String> require_grad_names) {
   runtime::TypedPackedFunc<IRModule(IRModule, PassContext)> pass_func =
       [=](IRModule mod, PassContext pc) { 
-        return relax::SimpleAD(mod, func_name, target_names, require_grad_names); 
+        return relax::SimpleAD(mod, func_name, target_name, require_grad_names); 
       };
   return CreateModulePass(/*pass_function=*/pass_func,  //
                           /*opt_level=*/0,              //
