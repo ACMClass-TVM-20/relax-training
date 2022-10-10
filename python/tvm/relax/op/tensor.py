@@ -31,9 +31,6 @@ def sub(lhs: Expr, rhs: Expr) -> Expr:
 def multiply(lhs: Expr, rhs: Expr) -> Expr:
     return _ffi_api.multiply(lhs, rhs)
 
-def matmul(lhs: Expr, rhs: Expr) -> Expr:
-    return _ffi_api.matmul(lhs, rhs)
-
 def collapse_sum_like(lhs: Expr, rhs: Expr) -> Expr:
     return _ffi_api.collapse_sum_like(lhs, rhs)
 
@@ -45,6 +42,9 @@ def ones_like(lhs: Expr) -> Expr:
 
 def zeros_like(lhs: Expr) -> Expr:
     return _ffi_api.zeros_like(lhs)
+
+def sum(lhs: Expr) -> Expr:
+    return _ffi_api.sum(lhs)
 
 def negative(lhs: Expr) -> Expr:
     return _ffi_api.negative(lhs)

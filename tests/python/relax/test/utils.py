@@ -112,7 +112,7 @@ op_map = {
   "relax.transpose": map_transpose,
   "relax.nn.relu": map_relu,
   "relax.nn.gradrelu_": map_gradrelu_,
-  "relax.matmul": map_matmul,
+  "relax.nn.matmul": map_matmul,
   "relax.nn.softmax": map_softmax,
   "relax.nn.cross_entropy": map_cross_entropy,
   "relax.nn.softmax_cross_entropy": map_softmax_cross_entropy,
@@ -120,6 +120,7 @@ op_map = {
   "relax.ones_like": map_ones_like,
   "relax.zeros_like": map_zeros_like,
   "relax.collapse_sum_like": map_collapse_sum_like,
+  "relax.log": map_log
 }
 
 @tvm.ir.transform.module_pass(opt_level=0, name="LowerToTensorIR")

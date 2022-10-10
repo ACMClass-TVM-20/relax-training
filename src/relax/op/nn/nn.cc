@@ -32,6 +32,7 @@ RELAX_REGISTER_BINARY_OP_BASE("nn.dense", InferShapeDense, InferTypeDense);
 RELAX_REGISTER_BINARY_OP_BASE("nn.cross_entropy", InferShapeCrossEntropy, InferTypeCrossEntropy);
 RELAX_REGISTER_BINARY_OP_BASE("nn.flatten", InferShapeFlatten, InferTypeFlatten);
 RELAX_REGISTER_BINARY_OP_BASE("nn.softmax_cross_entropy", InferShapeCrossEntropy, InferTypeCrossEntropy);
+RELAX_REGISTER_BINARY_OP_BASE("nn.matmul", InferShapeMatmul, InferTypeMatmul);
 
 }  // namespace relax
 }  // namespace tvm

@@ -52,6 +52,9 @@ def map_multiply(bb, call):
 def map_transpose(bb, call):
     return bb.call_te(topi.transpose, call.args[0])
 
+def map_sum(bb, call):
+    return bb.call_te(topi.sum, call.args[0])
+
 def map_relu(bb, call):
     return bb.call_te(topi.nn.relu, call.args[0])
 
@@ -63,8 +66,11 @@ def map_gradrelu_(bb, call):
 def map_matmul(bb, call):
     return bb.call_te(topi.matmul, call.args[0], call.args[1])
 
+def te_softmax(x):
+    return topi.nn.softmax(x, 1)
+
 def map_softmax(bb, call):
-    return bb.call_te(topi.nn.softmax, call.args[0])
+    return bb.call_te(te_softmax, call.args[0])
 
 def te_cross_entropy(x, y):
     # i = te.reduce_axis((0, 10), name="i")
@@ -76,7 +82,7 @@ def map_cross_entropy(bb, call):
     return bb.call_te(te_cross_entropy, call.args[0], call.args[1])
 
 def map_softmax_cross_entropy(bb, call):
-    func = lambda x, y: te_cross_entropy(topi.nn.softmax(x), y)
+    func = lambda x, y: te_cross_entropy(topi.nn.softmax(x, 1), y)
     return bb.call_te(func, call.args[0], call.args[1])
 
 def map_negative(bb, call):
@@ -101,6 +107,7 @@ def map_collapse_sum_like(bb, call):
     return bb.call_te(te_collapse_sum_like, call.args[0], call.args[1])
 
 
+
 op_map = {
   "relax.nn.dense": map_dense,
   "relax.add": map_add,
@@ -109,7 +116,7 @@ op_map = {
   "relax.transpose": map_transpose,
   "relax.nn.relu": map_relu,
   "relax.nn.gradrelu_": map_gradrelu_,
-  "relax.matmul": map_matmul,
+  "relax.nn.matmul": map_matmul,
   "relax.nn.softmax": map_softmax,
   "relax.nn.cross_entropy": map_cross_entropy,
   "relax.nn.softmax_cross_entropy": map_softmax_cross_entropy,
@@ -117,7 +124,8 @@ op_map = {
   "relax.ones_like": map_ones_like,
   "relax.zeros_like": map_zeros_like,
   "relax.collapse_sum_like": map_collapse_sum_like,
-  "relax.log": map_log
+  "relax.log": map_log,
+  "relax.sum": map_sum,
 }
 
 @tvm.ir.transform.module_pass(opt_level=0, name="LowerToTensorIR")

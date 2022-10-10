@@ -54,35 +54,33 @@ print("TVM version: ", tvm.__version__)
 
 @tvm.script.ir_module
 class MultiLayerPerceptron:
-    @R.register_gradient("matmul")
-    @T.p
-    # def grad(y, x1, x2, x3,  o1, o2, o3)
-
     @R.function
-    def main(x: Tensor((1, 784), "float32"),
+    def main(x: Tensor((1, 784), "float32"), # x shall be 2d tensor due to restriction of matmul
              w0: Tensor((784, 128), "float32"),
              b0: Tensor((128,), "float32"),
              w1: Tensor((128, 10), "float32"),
              b1: Tensor((10,), "float32"),
-             label: Tensor((1,10), "float32")):
-        
+             label: Tensor((1, 10), "float32")):
+
         # block 0
         with R.dataflow():
             # linear0
-            lv0 = relax.matmul(x, w0)
+            lv0 = relax.nn.matmul(x, w0)
             lv1 = relax.add(lv0, b0)
             # relu0
             lv2 = relax.nn.relu(lv1)
             # linear1
-            lv3 = relax.matmul(lv2, w1)
+            lv3 = relax.nn.matmul(lv2, w1)
             out = relax.add(lv3, b1)
             loss = relax.nn.softmax_cross_entropy(out, label)
             R.output(out, loss)
-            
+
         return out, loss
 
 
 MultiLayerPerceptron.show()
+
+print(dump_ast(MultiLayerPerceptron["main"]))
 
 # @tvm.script.ir_module
 # class AutoDiffMLP:
@@ -93,16 +91,16 @@ MultiLayerPerceptron.show()
 #              w1: Tensor((128, 10), "float32"),
 #              b1: Tensor((10,), "float32"),
 #              label: Tensor((1,10), "float32")):
-        
+
 #         # block 0
 #         with R.dataflow():
 #             # linear0
-#             lv0 = relax.matmul(x, w0) # shape: (1, 128)
+#             lv0 = relax.nn.matmul(x, w0) # shape: (1, 128)
 #             lv1 = relax.add(lv0, b0)
 #             # relu0
 #             lv2 = relax.nn.relu(lv1)
 #             # linear1
-#             lv3 = relax.matmul(lv2, w1) # shape: (1, 10)
+#             lv3 = relax.nn.matmul(lv2, w1) # shape: (1, 10)
 #             out = relax.add(lv3, b1)
 #             # lv4 = relax.nn.softmax(out)
 #             loss = relax.nn.softmax_cross_entropy(out, label)
@@ -116,8 +114,8 @@ MultiLayerPerceptron.show()
 
 #             lv2_trans = relax.transpose(lv2)  # shape: (128, 1)
 #             w1_trans  = relax.transpose(w1)   # shape: (10, 128)
-#             lv2_adjoint = relax.matmul(lv3_adjoint, w1_trans) # shape: (1, 128)
-#             w1_adjoint  = relax.matmul(lv2_trans, lv3_adjoint) # shape: (128, 10)
+#             lv2_adjoint = relax.nn.matmul(lv3_adjoint, w1_trans) # shape: (1, 128)
+#             w1_adjoint  = relax.nn.matmul(lv2_trans, lv3_adjoint) # shape: (128, 10)
 
 #             lv1_gradrelu_ = relax.nn.gradrelu_(lv1) # shape: (1, 128)
 #             lv1_adjoint  = relax.multiply(lv2_adjoint, lv1_gradrelu_) # shape: (1, 128)
@@ -126,7 +124,7 @@ MultiLayerPerceptron.show()
 #             lv0_adjoint = lv1_adjoint
 
 #             x_trans = relax.transpose(x) # shape: (784, 1)
-#             w0_adjoint = relax.matmul(x_trans, lv0_adjoint) # shape: (784, 128)
+#             w0_adjoint = relax.nn.matmul(x_trans, lv0_adjoint) # shape: (784, 128)
 
 #             R.output(out, loss, w0_adjoint, b0_adjoint, w1_adjoint, b1_adjoint)
 #         return out, loss, w0_adjoint, b0_adjoint, w1_adjoint, b1_adjoint
@@ -134,75 +132,79 @@ MultiLayerPerceptron.show()
 
 # # print(dump_ast(AutoDiffMLP["main"]))
 
-AutoDiffMLP = relax.transform.SimpleAD(func_name="main", target_names="loss", require_grad_names=["w0", "b0", "w1", "b1"])(MultiLayerPerceptron)
-# AutoDiffMLP.show()
+AutoDiffMLP = relax.transform.SimpleAD(func_name="main", target="loss", require_grads=["w0", "b0", "w1", "b1"])(MultiLayerPerceptron)
+AutoDiffMLP.show()
 TIRModule = LowerToTensorIRPass()(AutoDiffMLP)
-# TIRModule.show()
+TIRModule.show()
+print("-------------------------------")
+AutoDiffMLP.show()
+print("-------------------------------")
+MultiLayerPerceptron.show()
 
-# build and run
-ex = relax.vm.build(TIRModule, target="llvm")
-vm = relax.VirtualMachine(ex, tvm.cpu())
+# # build and run
+# ex = relax.vm.build(TIRModule, target="llvm")
+# vm = relax.VirtualMachine(ex, tvm.cpu())
 
-# """
-#     train
-# """
+# # """
+# #     train
+# # """
 
-# """
-#     test
-# nd_params = {k: tvm.nd.array(v) for k, v in mlp_params.items()}
-# img, label = next(iter(loader))
-# data_nd = tvm.nd.array(img.reshape(1, 784))
-# output = vm["main"](data_nd, nd_params["w0"], nd_params["b0"], nd_params["w1"], nd_params["b1"])
-# pred_kind = np.argmax(output.numpy(), axis=1)
-# print("Test Predict: ", class_names[pred_kind[0]])
-# print("True: ", class_names[label[0]])
-# """
+# # """
+# #     test
+# # nd_params = {k: tvm.nd.array(v) for k, v in mlp_params.items()}
+# # img, label = next(iter(loader))
+# # data_nd = tvm.nd.array(img.reshape(1, 784))
+# # output = vm["main"](data_nd, nd_params["w0"], nd_params["b0"], nd_params["w1"], nd_params["b1"])
+# # pred_kind = np.argmax(output.numpy(), axis=1)
+# # print("Test Predict: ", class_names[pred_kind[0]])
+# # print("True: ", class_names[label[0]])
+# # """
 
-success, total = 0, 0
-lr = 0.03
+# success, total = 0, 0
+# lr = 0.03
 
-batch_size = 64
-total_loss = 0
-epoch = 0
-gradient_dict = {}
-arg_names = ["w0", "b0", "w1", "b1"]
-for arg in arg_names:
-    gradient_dict[arg] = 0
+# batch_size = 64
+# total_loss = 0
+# epoch = 0
+# gradient_dict = {}
+# arg_names = ["w0", "b0", "w1", "b1"]
+# for arg in arg_names:
+#     gradient_dict[arg] = 0
 
-for img, label in loader:
-    nd_params = {k: tvm.nd.array(v) for k, v in mlp_params.items()}
-    data_nd = tvm.nd.array(img.reshape(1, 784))
-    label_nd = tvm.nd.array(np.array([[1 if i == label[0] else 0 for i in range(10)]]).astype(np.float32))
-    output, w0_grad, b0_grad, w1_grad, b1_grad = vm["main"](data_nd, nd_params["w0"], nd_params["b0"], nd_params["w1"], nd_params["b1"], label_nd)
-    pred_kind = np.argmax(output[0].numpy(), axis=1)
-    total += 1
-    if pred_kind[0] == label[0]:
-        success += 1
-    
-    # print("label: ", label_nd)
-    # print("output:", output[0])
-    # print("loss:", output[1])
-    # print("w0_grad", w0_grad)
-    # print("b0_grad", b0_grad)
-    # print("w1_grad", w1_grad)
-    # print("b1_grad", b1_grad)
-    # break
+# for img, label in loader:
+#     nd_params = {k: tvm.nd.array(v) for k, v in mlp_params.items()}
+#     data_nd = tvm.nd.array(img.reshape(1, 784))
+#     label_nd = tvm.nd.array(np.array([[1 if i == label[0] else 0 for i in range(10)]]).astype(np.float32))
+#     output, (w0_grad, b0_grad, w1_grad, b1_grad) = vm["main"](data_nd, nd_params["w0"], nd_params["b0"], nd_params["w1"], nd_params["b1"], label_nd)
+#     pred_kind = np.argmax(output[0].numpy(), axis=1)
+#     total += 1
+#     if pred_kind[0] == label[0]:
+#         success += 1
 
-    epoch += 1
-    total_loss += output[1].numpy()
-    gradient_dict["w0"] += w0_grad.numpy()
-    gradient_dict["b0"] += b0_grad.numpy()
-    gradient_dict["w1"] += w1_grad.numpy()
-    gradient_dict["b1"] += b1_grad.numpy()
+#     # print("label: ", label_nd)
+#     # print("output:", output[0])
+#     # print("loss:", output[1])
+#     # print("w0_grad", w0_grad)
+#     # print("b0_grad", b0_grad)
+#     # print("w1_grad", w1_grad)
+#     # print("b1_grad", b1_grad)
+#     # break
 
-    if epoch % batch_size == 0:
-        print("epoch={}, loss={}".format(epoch, total_loss))
+#     epoch += 1
+#     total_loss += output[1].numpy()
+#     gradient_dict["w0"] += w0_grad.numpy()
+#     gradient_dict["b0"] += b0_grad.numpy()
+#     gradient_dict["w1"] += w1_grad.numpy()
+#     gradient_dict["b1"] += b1_grad.numpy()
 
-        for arg in gradient_dict:
-            mlp_params[arg] -= lr * (gradient_dict[arg] / batch_size)
-            gradient_dict[arg] = 0
+#     if epoch % batch_size == 0:
+#         print("epoch={}, loss={}".format(epoch, total_loss))
 
-        total_loss = 0
-    
+#         for arg in gradient_dict:
+#             mlp_params[arg] -= lr * (gradient_dict[arg] / batch_size)
+#             gradient_dict[arg] = 0
 
-print("Prediction Rate: ", float(success)/float(total))
+#         total_loss = 0
+
+
+# print("Prediction Rate: ", float(success)/float(total))

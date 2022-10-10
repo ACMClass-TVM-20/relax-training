@@ -32,212 +32,216 @@ namespace relax {
 
 class SimpleADMutator : public ExprMutator {
   public:
-    explicit SimpleADMutator(IRModule mod, const String& target_name, const Array<String>& require_grad_names):
-    ExprMutator(mod), target_name_(target_name), require_grad_names_() {
-        for (const String& name: require_grad_names) {
-            require_grad_names_.emplace(name);
-        }
-        VLOG(2) << "AD target: " << target_name_ << std::endl;
+  explicit SimpleADMutator(IRModule mod, const String& target_name,
+                           const Array<String>& require_grad_names)
+      : ExprMutator(mod), target_name_(target_name), require_grad_names_() {
+    for (const String& name: require_grad_names) {
+      require_grad_names_.emplace(name);
+    }
+    VLOG(2) << "AD target: " << target_name_ << std::endl;
+  }
+
+  Expr VisitExpr_(const FunctionNode* node) override {
+    ICHECK(node->body->IsInstance<SeqExprNode>());
+    const SeqExprNode* seq_expr = node->body.as<SeqExprNode>();
+    // only a single dataflow block
+    ICHECK(seq_expr->blocks.size() == 1);
+    ICHECK(seq_expr->blocks[0]->IsInstance<DataflowBlockNode>());
+    const DataflowBlockNode* block = seq_expr->blocks[0].as<DataflowBlockNode>();
+
+    builder_->BeginDataflowBlock();
+    // copy and emit
+    for (const auto& binding: block->bindings) {
+      EmitBinding(binding);
     }
 
-    Expr VisitExpr_(const FunctionNode* node) override {
-        ICHECK(node->body->IsInstance<SeqExprNode>());
-        const SeqExprNode* seq_expr = node->body.as<SeqExprNode>();
-        // only a single dataflow block
-        ICHECK(seq_expr->blocks.size() == 1);
-        ICHECK(seq_expr->blocks[0]->IsInstance<DataflowBlockNode>());
-        const DataflowBlockNode* block = seq_expr->blocks[0].as<DataflowBlockNode>();
-        
-        builder_->BeginDataflowBlock();
-        // copy and emit
-        for (const auto& binding: block->bindings) {
-            EmitBinding(binding);
-        }
-
-        for (const auto& v: node->params) {
-            if (require_grad_names_.empty() || require_grad_names_.count(v->name_hint())) {
-                CreateAdjointVar(v, false);
-            }
-            else {
-                CreateAdjointVar(v, true);
-            }
-        }
-
-        // if target is not specified
-        if (target_name_.empty()) {
-            if (const auto* node = seq_expr->body.as<VarNode>()) {
-                const Var& body_var = GetRef<Var>(node);
-                CheckTarget(body_var);
-                CreateAdjointVar(body_var, true);
-                InitGrad(adjoint_var_map[body_var], body_var);
-            }
-            else {
-                LOG(FATAL) << "the body of the function (the default target) is not a relax.Var" << std::endl;
-            }
-        }
-
-        // reverse-mode
-        for (int i = block->bindings.size()-1; i >= 0; --i) {
-            if (!block->bindings[i]->IsInstance<VarBindingNode>()) continue;
-            const VarBindingNode* binding = block->bindings[i].as<VarBindingNode>();
-            VisitBinding_(binding);  
-        }
-
-        // handle the return
-        Array<Expr> out_expr, out_adjoints;
-        Array<Type> ret_type, out_adjoints_type;
-        out_expr.push_back(seq_expr->body);
-        ret_type.push_back(node->ret_type);
-
-        // emit the input adjoints
-        for (const auto& param: node->params) {
-            if (require_grad_names_.empty() || require_grad_names_.count(param->name_hint())) {
-                const Var& adjoint_var = adjoint_var_map[param];
-                BindAndEmit(adjoint_var, adjoint_expr_map[param]);
-                out_adjoints.push_back(adjoint_var);
-                out_adjoints_type.push_back(adjoint_var->checked_type());
-            }
-        }
-
-        out_expr.push_back(Tuple(out_adjoints));
-        ret_type.push_back(TupleType(out_adjoints_type));
-
-        return Function(node->params, SeqExpr({builder_->EndBlock()}, Tuple(out_expr)), TupleType(ret_type), node->attrs);
+    for (const auto& v: node->params) {
+      if (require_grad_names_.empty() || require_grad_names_.count(v->name_hint())) {
+        CreateAdjointVar(v, false);
+      }
+      else {
+        CreateAdjointVar(v, true);
+      }
     }
 
-    void VisitBinding_(const VarBindingNode* binding) override {
-        CreateAdjointVar(binding->var, true);
-        const Var& adjoint_var = adjoint_var_map[binding->var];
-
-        // must be output or expr in ignored output's AST
-        if (adjoint_expr_map.count(binding->var) == 0) {
-            if (target_name_.empty() || target_name_ != binding->var->name_hint()) {
-                return;
-            }
-            // if target is specified
-            CheckTarget(binding->var);
-            InitGrad(adjoint_var, binding->var);
-        }
-        else {
-            // meet a def
-            BindAndEmit(adjoint_var, adjoint_expr_map[binding->var]);
-        }
-
-        // back prop.
-
-        // case 1: assign
-        // a = b
-        // b_adjoint_expr += a_adjoint_var
-        if (const auto* node = binding->value.as<VarNode>()) {
-            AdjointExprIncre(GetRef<Var>(node), adjoint_var);
-        }
-        // case 2: call
-        else if (const auto* node = binding->value.as<CallNode>()) {
-            const Op& call_op = GetRef<Op>(node->op.as<OpNode>());
-            const Array<Expr>& partials = gradient_op_map[call_op](GetRef<Call>(node), adjoint_var);
-            ICHECK(partials.size() == node->args.size()) << "partials number != inputs number";
-            for (size_t i = 0; i < partials.size(); ++i) {
-                const VarNode* arg = node->args[i].as<VarNode>();
-                ICHECK(arg != nullptr);
-                AdjointExprIncre(GetRef<Var>(arg), partials[i]);
-            }
-        }
-        else {
-            LOG(FATAL) << "Unsupport: unknown binding expr" << binding->value;
-        }
-
-        // SSA. release the space
-        adjoint_var_map.erase(binding->var);
-        adjoint_expr_map.erase(binding->var);
+    // if target is not specified
+    if (target_name_.empty()) {
+      if (const auto* node = seq_expr->body.as<VarNode>()) {
+        const Var& body_var = GetRef<Var>(node);
+        CheckTarget(body_var);
+        CreateAdjointVar(body_var, true);
+        InitGrad(adjoint_var_map[body_var], body_var);
+      }
+      else {
+        LOG(FATAL) << "the body of the function (the default target) is not a relax.Var" << std::endl;
+      }
     }
 
-    void CreateAdjointVar(const Var& v, bool is_dataflow_var) {
-        // has created
-        if (adjoint_var_map.count(v) != 0) return;
-        if (is_dataflow_var) {
-            Var adjoint = DataflowVar(v->name_hint() + "_adjoint", v->shape(), v->checked_type());
-			adjoint->checked_type_ = v->checked_type();
-            adjoint_var_map.Set(v, adjoint);
-        }
-        else {
-            Var adjoint = Var(v->name_hint() + "_adjoint", v->shape(), v->checked_type());
-			adjoint->checked_type_ = v->checked_type();
-            adjoint_var_map.Set(v, adjoint);
-        }
+    // reverse-mode
+    for (int i = block->bindings.size()-1; i >= 0; --i) {
+      if (!block->bindings[i]->IsInstance<VarBindingNode>()) continue;
+      const VarBindingNode* binding = block->bindings[i].as<VarBindingNode>();
+      VisitBinding_(binding);
     }
 
-    void AdjointExprIncre(const Var& v, const Expr& increment) {
-        if (adjoint_expr_map.count(v) == 0) {
-            adjoint_expr_map.Set(v, increment);
-        }
-        else {
-            const Expr& now_expr = adjoint_expr_map[v];
-            const Op& add_op = Op::Get("relax.add");
-            const Expr& new_expr = Call(add_op, {now_expr, increment});
-            adjoint_expr_map.Set(v, new_expr);
-        }
+    // handle the return
+    Array<Expr> out_expr, out_adjoints;
+    Array<Type> ret_type, out_adjoints_type;
+    out_expr.push_back(seq_expr->body);
+    ret_type.push_back(node->ret_type);
+
+    // emit the input adjoints
+    for (const auto& param: node->params) {
+      if (require_grad_names_.empty() || require_grad_names_.count(param->name_hint())) {
+        const Var& adjoint_var = adjoint_var_map[param];
+        BindAndEmit(adjoint_var, adjoint_expr_map[param]);
+        out_adjoints.push_back(adjoint_var);
+        out_adjoints_type.push_back(adjoint_var->checked_type());
+      }
     }
 
-    void EmitBinding(const Binding& binding) {
-        if (const auto* node = binding.as<VarBindingNode>()) {
-            const VarBinding& var_binding = GetRef<VarBinding>(node);
-            if (var_binding->var->IsInstance<DataflowVarNode>()) {
-                builder_->Emit(var_binding);
-            }
-            else {
-                builder_->EmitOutput(var_binding);
-            }
-        }
-        else if (const auto* node = binding.as<MatchShapeNode>()) {
-            const MatchShape& match_shape = GetRef<MatchShape>(node);
-            builder_->EmitMatchShape(match_shape);
-        } 
-        else {
-            LOG(FATAL) << "TypeError: Invalid type: " << binding->GetTypeKey();
-        }
+    out_expr.push_back(Tuple(out_adjoints));
+    ret_type.push_back(TupleType(out_adjoints_type));
+
+    return Function(node->params, SeqExpr({builder_->EndBlock()}, Tuple(out_expr)),
+                    TupleType(ret_type), node->attrs);
+  }
+
+  void VisitBinding_(const VarBindingNode* binding) override {
+    CreateAdjointVar(binding->var, true);
+    const Var& adjoint_var = adjoint_var_map[binding->var];
+
+    // must be output or expr in ignored output's AST
+    if (adjoint_expr_map.count(binding->var) == 0) {
+      if (target_name_.empty() || target_name_ != binding->var->name_hint()) {
+        return;
+      }
+      // if target is specified
+      CheckTarget(binding->var);
+      InitGrad(adjoint_var, binding->var);
+    }
+    else {
+      // meet a def
+      BindAndEmit(adjoint_var, adjoint_expr_map[binding->var]);
     }
 
-    void BindAndEmit(const Var& v, const Expr& e) {
-        e->checked_type_ = v->checked_type();
-        e->shape_ = v->shape();
-        if (v->IsInstance<DataflowVarNode>()) {
-            builder_->Emit(VarBinding(v, e));
-        }
-        else {
-            builder_->EmitOutput(VarBinding(v, e));
-        }
+    // back prop.
+
+    // case 1: assign
+    // a = b
+    // b_adjoint_expr += a_adjoint_var
+    if (const auto* node = binding->value.as<VarNode>()) {
+      AdjointExprIncre(GetRef<Var>(node), adjoint_var);
+    }
+    // case 2: call
+    else if (const auto* node = binding->value.as<CallNode>()) {
+      const Op& call_op = GetRef<Op>(node->op.as<OpNode>());
+      const Array<Expr>& partials = gradient_op_map[call_op](GetRef<Call>(node), adjoint_var);
+      ICHECK(partials.size() == node->args.size()) << "partials number != inputs number";
+      for (size_t i = 0; i < partials.size(); ++i) {
+        const VarNode* arg = node->args[i].as<VarNode>();
+        ICHECK(arg != nullptr);
+        AdjointExprIncre(GetRef<Var>(arg), partials[i]);
+      }
+    }
+    else {
+      LOG(FATAL) << "Unsupport: unknown binding expr" << binding->value;
     }
 
-    void CheckTarget(const Expr& e) {
-        ICHECK(!e->IsInstance<DataflowVarNode>()) << "not an output node";
-        ICHECK(e->checked_type_.as<DynTensorTypeNode>()) << "target must be a DynTensorType" << std::endl;
-        VLOG(2) << "trace target type: " << e->checked_type_ << std::endl;
-        ICHECK(e->shape().as<ShapeExprNode>()) << "error when getting target shape" << std::endl;
-        const auto* shape_node = e->shape().as<ShapeExprNode>();
-        VLOG(2) << "trace target shape: " << shape_node->values << std::endl;
-        ICHECK(shape_node->values.size() == 0) << "target must be a scalar" << std::endl;
-    }
+    // SSA. release the space
+    adjoint_var_map.erase(binding->var);
+    adjoint_expr_map.erase(binding->var);
+  }
 
-    void InitGrad(const Var& adjoint_var, const Var& var) {
-        const Op& init_op = Op::Get("relax.ones_like");
-        BindAndEmit(adjoint_var, Call(init_op, {var}));
+  void CreateAdjointVar(const Var& v, bool is_dataflow_var) {
+    // has created
+    if (adjoint_var_map.count(v) != 0) return;
+    if (is_dataflow_var) {
+      Var adjoint = DataflowVar(v->name_hint() + "_adjoint", v->shape(), v->checked_type());
+      adjoint->checked_type_ = v->checked_type();
+      adjoint_var_map.Set(v, adjoint);
     }
+    else {
+      Var adjoint = Var(v->name_hint() + "_adjoint", v->shape(), v->checked_type());
+      adjoint->checked_type_ = v->checked_type();
+      adjoint_var_map.Set(v, adjoint);
+    }
+  }
+
+  void AdjointExprIncre(const Var& v, const Expr& increment) {
+    if (adjoint_expr_map.count(v) == 0) {
+      adjoint_expr_map.Set(v, increment);
+    }
+    else {
+      const Expr& now_expr = adjoint_expr_map[v];
+      const Op& add_op = Op::Get("relax.add");
+      const Expr& new_expr = Call(add_op, {now_expr, increment});
+      adjoint_expr_map.Set(v, new_expr);
+    }
+  }
+
+  void EmitBinding(const Binding& binding) {
+    if (const auto* node = binding.as<VarBindingNode>()) {
+      const VarBinding& var_binding = GetRef<VarBinding>(node);
+      if (var_binding->var->IsInstance<DataflowVarNode>()) {
+        builder_->Emit(var_binding);
+      }
+      else {
+        builder_->EmitOutput(var_binding);
+      }
+    }
+    else if (const auto* node = binding.as<MatchShapeNode>()) {
+      const MatchShape& match_shape = GetRef<MatchShape>(node);
+      builder_->EmitMatchShape(match_shape);
+    }
+    else {
+      LOG(FATAL) << "TypeError: Invalid type: " << binding->GetTypeKey();
+    }
+  }
+
+  void BindAndEmit(const Var& v, const Expr& e) {
+    e->checked_type_ = v->checked_type();
+    e->shape_ = v->shape();
+    if (v->IsInstance<DataflowVarNode>()) {
+      builder_->Emit(VarBinding(v, e));
+    }
+    else {
+      builder_->EmitOutput(VarBinding(v, e));
+    }
+  }
+
+  void CheckTarget(const Expr& e) {
+    ICHECK(!e->IsInstance<DataflowVarNode>()) << "not an output node";
+    ICHECK(e->checked_type_.as<DynTensorTypeNode>()) << "target must be a DynTensorType" << std::endl;
+    VLOG(2) << "trace target type: " << e->checked_type_ << std::endl;
+    ICHECK(e->shape().as<ShapeExprNode>()) << "error when getting target shape" << std::endl;
+    const auto* shape_node = e->shape().as<ShapeExprNode>();
+    VLOG(2) << "trace target shape: " << shape_node->values << std::endl;
+    ICHECK(shape_node->values.size() == 0) << "target must be a scalar" << std::endl;
+  }
+
+  void InitGrad(const Var& adjoint_var, const Var& var) {
+    const Op& init_op = Op::Get("relax.ones_like");
+    BindAndEmit(adjoint_var, Call(init_op, {var}));
+  }
 
   private:
-    // specified sets
-    String target_name_;
-    std::unordered_set<String> require_grad_names_;
+  // specified sets
+  String target_name_;
+  std::unordered_set<String> require_grad_names_;
 
-    // var to its adjoints var
-    Map<Var, Var> adjoint_var_map;
-    // var to its adjoint expr
-    Map<Var, Expr> adjoint_expr_map;
+  // var to its adjoints var
+  Map<Var, Var> adjoint_var_map;
+  // var to its adjoint expr
+  Map<Var, Expr> adjoint_expr_map;
 
-    // gop map
-    const OpAttrMap<relay::FPrimalGradient> gradient_op_map = Op::GetAttrMap<relay::FPrimalGradient>("FPrimalGradient");
+  // gop map
+  const OpAttrMap<relay::FPrimalGradient> gradient_op_map =
+      Op::GetAttrMap<relay::FPrimalGradient>("FPrimalGradient");
 };
 
-IRModule SimpleAD(IRModule m, const String& func_name, const String& target_name, const Array<String>& require_grad_names) {
+IRModule SimpleAD(IRModule m, const String& func_name, const String& target_name,
+                  const Array<String>& require_grad_names) {
   IRModuleNode* new_module = m.CopyOnWrite();
   auto mutator = SimpleADMutator(GetRef<IRModule>(new_module), target_name, require_grad_names);
   for (const auto& func_pr : m->functions) {
@@ -256,12 +260,12 @@ namespace transform {
 
 Pass SimpleAD(String func_name, String target_name, Array<String> require_grad_names) {
   runtime::TypedPackedFunc<IRModule(IRModule, PassContext)> pass_func =
-      [=](IRModule mod, PassContext pc) { 
-        return relax::SimpleAD(mod, func_name, target_name, require_grad_names); 
+      [=](IRModule mod, PassContext pc) {
+        return relax::SimpleAD(mod, func_name, target_name, require_grad_names);
       };
-  return CreateModulePass(/*pass_function=*/pass_func,  //
-                          /*opt_level=*/0,              //
-                          /*pass_name=*/"SimpleAD",      //
+  return CreateModulePass(/*pass_function=*/pass_func,
+                          /*opt_level=*/0,
+                          /*pass_name=*/"SimpleAD",
                           /*required=*/{});
 }
 
@@ -269,5 +273,5 @@ TVM_REGISTER_GLOBAL("relax.transform.SimpleAD").set_body_typed(SimpleAD);
 
 }  // namespace transform
 
-}
-}
+}  // namespace relax
+}  // namespace tvm

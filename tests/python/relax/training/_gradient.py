@@ -7,19 +7,19 @@ from tvm.ir.module import IRModule
 from tvm.relay.op import register_gradient
 from tvm.script import relax as R
 from tvm.script import tir as T
-
+import tvm.relax.op.nn as nn
 from tvm.relax.op import (
 	collapse_sum_like,
 	log,
-	matmul,
 	multiply,
 	negative,
 	sub,
-	transpose
+	transpose,
+	ones_like
 )
 
 from tvm.relax.op.nn import (
-	gradrelu_, 
+	gradrelu_,
 	softmax
 )
 
@@ -51,14 +51,19 @@ def relu_grad(orig, grad):
 	return [multiply(grad, gradrelu_(orig.args[0]))]
 
 
-@register_gradient("relax.matmul")
+@register_gradient("relax.nn.matmul")
 def matmul_grad(orig, grad):
 	"""Returns [grad' @ tensor_b, tensor_a @ grad']"""
 	tensor_a, tensor_b = orig.args
 	return [
-		collapse_sum_like(matmul(grad, transpose(tensor_b)), tensor_a),
-		collapse_sum_like(matmul(transpose(tensor_a), grad), tensor_b),
+		collapse_sum_like(nn.matmul(grad, transpose(tensor_b)), tensor_a),
+		collapse_sum_like(nn.matmul(transpose(tensor_a), grad), tensor_b),
 	]
+
+@register_gradient("relax.sum")
+def sum_grad(orig, grad):
+	"""Returns [grad * ones_like(x)]"""
+	return [multiply(grad, ones_like(orig.args[0]))]
 
 
 # @register_gradient("relax.nn.softmax")
@@ -79,4 +84,5 @@ def matmul_grad(orig, grad):
 @register_gradient("relax.nn.softmax_cross_entropy")
 def softmax_cross_entropy_grad(orig, grad):
 	y_hat = softmax(orig.args[0])
-	return [sub(y_hat, orig.args[1]), negative(log(y_hat))]
+	return [multiply(grad, sub(y_hat, orig.args[1])), multiply(grad, negative(log(y_hat)))]
+	# return [sub(y_hat, orig.args[1]), negative(log(y_hat))]

@@ -32,6 +32,8 @@ def conv2d(
 def relu(data: Expr) -> Expr:
     return _make.relu(data)
 
+def matmul(lhs: Expr, rhs: Expr) -> Expr:
+    return _make.matmul(lhs, rhs)
 
 def softmax(data: Expr) -> Expr:
     return _make.softmax(data)
