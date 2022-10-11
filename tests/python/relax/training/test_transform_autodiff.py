@@ -71,14 +71,14 @@ def test_binding_uses():
                 lv5 = lv3
                 lv6 = relax.add(x, lv5)
                 lv7 = relax.sum(lv4)
-                lv8 = relax.add(lv6, z)
+                lv8 = relax.add(lv6, z) # unused
                 R.output(lv7)
             return lv7
     After = relax.transform.SimpleAD(func_name="main", target="lv7")(Before)
 
     args = [rand("float32", 5, 5), rand("float32", 5), rand("float32", 5), rand("float32", 5)]
     output, grads = execute_mod(After, "main", *args)
-    assert_allclose(output.numpy(), np.sum(2 * args[0].numpy() + 2 * args[1].numpy()))
+    assert_allclose(output.numpy(), np.sum(2 * args[0].numpy() + 2 * args[1].numpy()), atol=1e-4)
     expected_grads_nd = [2 * np.ones_like(args[0].numpy()),
                          10 * np.ones_like(args[1].numpy()),
                          np.zeros_like(args[2].numpy()),
@@ -101,8 +101,7 @@ def test_default_require_grads():
                 lv3 = relax.add(y, z)
                 lv4 = relax.add(lv1, lv2)
                 lv5 = relax.add(lv4, lv3)
-                # lv6 = relax.sum(lv5)
-                lv6 = lv5
+                lv6 = relax.sum(lv5)
                 R.output(lv6)
             return lv6
 
