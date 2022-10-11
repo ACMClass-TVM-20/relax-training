@@ -16,20 +16,21 @@
 # under the License.
 from __future__ import annotations  # must import to defer parsing of annotations
 
-import pytest
 import numpy as np
+import pytest
 import tvm
 import tvm.script
-from tvm import topi, relax, te
+from tvm import relax
 from tvm import relax as rx
-from tvm.script import tir as T
-from tvm.script import relax as R
-import _gradient
 from tvm.ir.base import assert_structural_equal
-from tvm.testing.utils import check_numerical_grads
-from tvm.testing import assert_allclose
-from utils import LowerToTensorIRPass
 from tvm.relay.testing import rand
+from tvm.script import relax as R
+from tvm.testing import assert_allclose
+from tvm.testing.utils import check_numerical_grads
+
+import _gradient
+from utils import LowerToTensorIRPass
+
 
 def execute_mod(mod, func_name, *args):
     lowered_mod = LowerToTensorIRPass()(mod)
@@ -70,14 +71,14 @@ def test_binding_uses():
                 lv5 = lv3
                 lv6 = relax.add(x, lv5)
                 lv7 = relax.sum(lv4)
-                lv8 = relax.add(lv6, z)
+                lv8 = relax.add(lv6, z) # unused
                 R.output(lv7)
             return lv7
     After = relax.transform.SimpleAD(func_name="main", target="lv7")(Before)
 
     args = [rand("float32", 5, 5), rand("float32", 5), rand("float32", 5), rand("float32", 5)]
     output, grads = execute_mod(After, "main", *args)
-    assert_allclose(output.numpy(), np.sum(2 * args[0].numpy() + 2 * args[1].numpy()))
+    assert_allclose(output.numpy(), np.sum(2 * args[0].numpy() + 2 * args[1].numpy()), atol=1e-4)
     expected_grads_nd = [2 * np.ones_like(args[0].numpy()),
                          10 * np.ones_like(args[1].numpy()),
                          np.zeros_like(args[2].numpy()),
@@ -101,7 +102,6 @@ def test_default_require_grads():
                 lv4 = relax.add(lv1, lv2)
                 lv5 = relax.add(lv4, lv3)
                 lv6 = relax.sum(lv5)
-                # lv6 = lv5
                 R.output(lv6)
             return lv6
 

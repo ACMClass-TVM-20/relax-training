@@ -1,12 +1,6 @@
 from __future__ import annotations
 
-import numpy as np
-import tvm
-from tvm import relax, te, topi
-from tvm.ir.module import IRModule
 from tvm.relay.op import register_gradient
-from tvm.script import relax as R
-from tvm.script import tir as T
 import tvm.relax.op.nn as nn
 from tvm.relax.op import (
 	collapse_sum_like,
