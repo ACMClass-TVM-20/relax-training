@@ -16,9 +16,49 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 /*!
  * \file src/relax/transform/autodiff/simple_ad.cc
  * \brief A simple reverse-mode auto differentiation.
+ *
+ * Now only supports differentiating a function in the IRModule with one dataflow block
+ * with respect to one of its output(s). The specified output needs to be scalar.
+ *
+ * Example:
+ *
+ * Before AD:
+ * @tvm.script.ir_module
+ * class Before:
+ *     @R.function
+ *     def main(x: Tensor((5, 5), "float32"),
+ *              y: Tensor((5, 5), "float32")):
+ *         with R.dataflow():
+ *             lv0 = relax.add(x, y)
+ *             lv1 = relax.sum(lv0)
+ *             R.output(lv1)
+ *         return lv1
+ *
+ * After AD:
+ * @tvm.script.ir_module
+ * class Module:
+ *     @R.function
+ *     def main(x: Tensor((5, 5), "float32"), y: Tensor((5, 5), "float32")) -> Tuple(
+ *             Tensor(None, "float32", ndim = 0), Tuple(Tensor(None, "float32", ndim = 2),
+ *             Tensor(None, "float32", ndim = 2))):
+ *         # block 0
+ *         with R.dataflow():
+ *             lv0: Tensor((5, 5), "float32") = relax.add(x, y)
+ *             lv1: Tensor((), "float32") = relax.sum(lv0)
+ *             lv1_adjoint: Tensor((), "float32") = relax.ones_like(lv1)
+ *             lv: Tensor((5, 5), "float32") = relax.ones_like(lv0)
+ *             lv0_adjoint: Tensor((5, 5), "float32") = relax.multiply(lv1_adjoint, lv)
+ *             x_adjoint: Tensor((5, 5), "float32") = relax.collapse_sum_like(lv0_adjoint, x)
+ *             y_adjoint: Tensor((5, 5), "float32") = relax.collapse_sum_like(lv0_adjoint, y)
+ *             R.output(lv1, x_adjoint, y_adjoint)
+ *         # return value type: Tuple(original_return_value, Tuple(all_adjoints))
+ *         return (lv1, (x_adjoint, y_adjoint))
+ *
+ *  TODO(yixindong, chaofanlin): eliminate unnecessary computations.
  */
 
 #include <tvm/relax/expr_functor.h>
@@ -31,14 +71,13 @@ namespace tvm {
 namespace relax {
 
 class SimpleADMutator : public ExprMutator {
-  public:
+ public:
   explicit SimpleADMutator(IRModule mod, const String& target_name,
                            const Array<String>& require_grad_names)
       : ExprMutator(mod), target_name_(target_name), require_grad_names_() {
     for (const String& name: require_grad_names) {
       require_grad_names_.emplace(name);
     }
-    VLOG(2) << "AD target: " << target_name_ << std::endl;
   }
 
   Expr VisitExpr_(const FunctionNode* node) override {
@@ -94,7 +133,14 @@ class SimpleADMutator : public ExprMutator {
     for (const auto& param: node->params) {
       if (require_grad_names_.empty() || require_grad_names_.count(param->name_hint())) {
         const Var& adjoint_var = adjoint_var_map[param];
-        BindAndEmit(adjoint_var, adjoint_expr_map[param]);
+        if (adjoint_expr_map.count(param)) {
+          BindAndEmit(adjoint_var, adjoint_expr_map[param]);
+        }
+        else {
+          const Op& op = Op::Get("relax.zeros_like");
+          const Expr& default_adjoint = Call(op, {param});
+          BindAndEmit(adjoint_var, default_adjoint);
+        }
         out_adjoints.push_back(adjoint_var);
         out_adjoints_type.push_back(adjoint_var->checked_type());
       }
@@ -153,8 +199,9 @@ class SimpleADMutator : public ExprMutator {
     adjoint_expr_map.erase(binding->var);
   }
 
+ private:
   void CreateAdjointVar(const Var& v, bool is_dataflow_var) {
-    // has created
+    // the adjoint var has been created
     if (adjoint_var_map.count(v) != 0) return;
     if (is_dataflow_var) {
       Var adjoint = DataflowVar(v->name_hint() + "_adjoint", v->shape(), v->checked_type());
@@ -213,10 +260,8 @@ class SimpleADMutator : public ExprMutator {
   void CheckTarget(const Expr& e) {
     ICHECK(!e->IsInstance<DataflowVarNode>()) << "not an output node";
     ICHECK(e->checked_type_.as<DynTensorTypeNode>()) << "target must be a DynTensorType" << std::endl;
-    VLOG(2) << "trace target type: " << e->checked_type_ << std::endl;
     ICHECK(e->shape().as<ShapeExprNode>()) << "error when getting target shape" << std::endl;
     const auto* shape_node = e->shape().as<ShapeExprNode>();
-    VLOG(2) << "trace target shape: " << shape_node->values << std::endl;
     ICHECK(shape_node->values.size() == 0) << "target must be a scalar" << std::endl;
   }
 
@@ -225,7 +270,6 @@ class SimpleADMutator : public ExprMutator {
     BindAndEmit(adjoint_var, Call(init_op, {var}));
   }
 
-  private:
   // specified sets
   String target_name_;
   std::unordered_set<String> require_grad_names_;
@@ -240,19 +284,30 @@ class SimpleADMutator : public ExprMutator {
       Op::GetAttrMap<relay::FPrimalGradient>("FPrimalGradient");
 };
 
+/*!
+ * \brief A simple reverse-mode auto differentiation.
+ * \param m The module
+ * \param func_name The name of the specific function
+ * \param target_name The name of the relax variable that serves as target in the differentiation.
+ * \param require_grad_names The relax variables which need adjoints. Must be inputs.
+ * \return The module after AD.
+ */
 IRModule SimpleAD(IRModule m, const String& func_name, const String& target_name,
                   const Array<String>& require_grad_names) {
   IRModuleNode* new_module = m.CopyOnWrite();
   auto mutator = SimpleADMutator(GetRef<IRModule>(new_module), target_name, require_grad_names);
+  bool found = false;
   for (const auto& func_pr : m->functions) {
     if (const auto* relax_f = func_pr.second.as<FunctionNode>()) {
       Optional<String> gsymbol = relax_f->GetAttr<String>(tvm::attr::kGlobalSymbol);
       if (gsymbol.defined() && gsymbol.value() == func_name) {
         Function f_after = Downcast<Function>(mutator.VisitExpr(func_pr.second));
         new_module->Update(func_pr.first, f_after);
+        found = true;
       }
     }
   }
+  ICHECK(found) << "function " << func_name << " not found" << std::endl;
   return GetRef<IRModule>(new_module);
 }
 
