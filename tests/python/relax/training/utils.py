@@ -1,10 +1,12 @@
 from __future__ import annotations
+
 import numpy as np
 import tvm
 from tvm.ir.module import IRModule
 from tvm import topi, relax, te
 from tvm.script import tir as T
 from tvm.script import relax as R
+
 import _gradient
 
 
@@ -66,11 +68,8 @@ def map_gradrelu_(bb, call):
 def map_matmul(bb, call):
     return bb.call_te(topi.matmul, call.args[0], call.args[1])
 
-def te_softmax(x):
-    return topi.nn.softmax(x, 1)
-
 def map_softmax(bb, call):
-    return bb.call_te(te_softmax, call.args[0])
+    return bb.call_te(topi.nn.softmax, call.args[0])
 
 def te_cross_entropy(x, y):
     # i = te.reduce_axis((0, 10), name="i")
@@ -82,7 +81,7 @@ def map_cross_entropy(bb, call):
     return bb.call_te(te_cross_entropy, call.args[0], call.args[1])
 
 def map_softmax_cross_entropy(bb, call):
-    func = lambda x, y: te_cross_entropy(topi.nn.softmax(x, 1), y)
+    func = lambda x, y: te_cross_entropy(topi.nn.softmax(x), y)
     return bb.call_te(func, call.args[0], call.args[1])
 
 def map_negative(bb, call):

@@ -158,6 +158,11 @@ def test_softmax_cross_entropy():
     result = gen_and_run(relax.op.nn.softmax_cross_entropy, data1_numpy, data2_numpy)
     np.testing.assert_allclose(expected_output, result.numpy(), rtol=1e-6, atol=1e-6)
 
+def test_sum():
+    data_numpy = np.random.randint(1, 16, (10,)).astype(np.float32)
+    expected_output = np.sum(data_numpy)
+    result = gen_and_run(relax.op.sum, data_numpy)
+    np.testing.assert_allclose(expected_output, result.numpy(), rtol=1e-6, atol=1e-6)
 
 if __name__ == "__main__":
     pytest.main([__file__])

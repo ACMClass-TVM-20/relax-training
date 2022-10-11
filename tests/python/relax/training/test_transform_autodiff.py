@@ -100,8 +100,8 @@ def test_default_require_grads():
                 lv3 = relax.add(y, z)
                 lv4 = relax.add(lv1, lv2)
                 lv5 = relax.add(lv4, lv3)
-                # lv6 = relax.sum(lv5)
-                lv6 = lv5
+                lv6 = relax.sum(lv5)
+                # lv6 = lv5
                 R.output(lv6)
             return lv6
 
