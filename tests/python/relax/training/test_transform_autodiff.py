@@ -14,9 +14,8 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
-
 from __future__ import annotations  # must import to defer parsing of annotations
+
 import pytest
 import numpy as np
 import tvm
@@ -49,6 +48,131 @@ def check_mod_grad_equal(mod1, mod2, func_name):
         assert_allclose(l.numpy(), r.numpy())
     for (l, r) in zip(grad1, grad2):
         assert_allclose(l.numpy(), r.numpy())
+
+
+def test_binding_uses():
+    # This case tests:
+    # - Different type of bindings: assign binding & call binding;
+    # - One def and multiple uses.
+    # - Unused variable in module
+    @tvm.script.ir_module
+    class Before:
+        @R.function
+        def main(x: Tensor((5, 5), "float32"),
+                 y: Tensor((5,), "float32"),
+                 z: Tensor((5,), "float32"),
+                 u: Tensor((5,), "float32")):
+            with R.dataflow():
+                lv1 = x
+                lv2 = relax.add(lv1, y)
+                lv3 = relax.add(lv2, y)
+                lv4 = relax.add(x, lv3)
+                lv5 = lv3
+                lv6 = relax.add(x, lv5)
+                lv7 = relax.sum(lv4)
+                lv8 = relax.add(lv6, z)
+                R.output(lv7)
+            return lv7
+    After = relax.transform.SimpleAD(func_name="main", target="lv7")(Before)
+
+    args = [rand("float32", 5, 5), rand("float32", 5), rand("float32", 5), rand("float32", 5)]
+    output, grads = execute_mod(After, "main", *args)
+    assert_allclose(output.numpy(), np.sum(2 * args[0].numpy() + 2 * args[1].numpy()))
+    expected_grads_nd = [2 * np.ones_like(args[0].numpy()),
+                         10 * np.ones_like(args[1].numpy()),
+                         np.zeros_like(args[2].numpy()),
+                         np.zeros_like(args[3].numpy())]
+
+    for i, j in zip(grads, expected_grads_nd):
+        assert_allclose(i.numpy(), j)
+
+def test_default_require_grads():
+    @tvm.script.ir_module
+    class Before:
+        @R.function
+        def main(x: Tensor((5, 5), "float32"),
+                 y: Tensor((5, 5), "float32"),
+                 z: Tensor((5, 5), "float32"),
+                 u: Tensor((5, 5), "float32")):
+            with R.dataflow():
+                lv1 = relax.add(x, y)
+                lv2 = relax.sub(z, u)
+                lv3 = relax.add(y, z)
+                lv4 = relax.add(lv1, lv2)
+                lv5 = relax.add(lv4, lv3)
+                # lv6 = relax.sum(lv5)
+                lv6 = lv5
+                R.output(lv6)
+            return lv6
+
+    @tvm.script.ir_module
+    class Expected1:
+        @R.function
+        def main(x: Tensor((5, 5), "float32"),
+                 y: Tensor((5, 5), "float32"),
+                 z: Tensor((5, 5), "float32"),
+                 u: Tensor((5, 5), "float32")):
+            with R.dataflow():
+                lv1 = relax.add(x, y)
+                lv2 = relax.sub(z, u)
+                lv3 = relax.add(y, z)
+                lv4 = relax.add(lv1, lv2)
+                lv5 = relax.add(lv4, lv3)
+                lv6 = relax.sum(lv5)
+                lv6_adjoint = relax.ones_like(lv6)
+                lv = relax.ones_like(lv5)
+                lv5_adjoint = relax.multiply(lv6_adjoint, lv)
+                lv4_adjoint = relax.collapse_sum_like(lv5_adjoint, lv4)
+                lv3_adjoint = relax.collapse_sum_like(lv5_adjoint, lv3)
+                lv2_adjoint = relax.collapse_sum_like(lv4_adjoint, lv2)
+                lv1_adjoint = relax.collapse_sum_like(lv4_adjoint, lv1)
+                x_adjoint = relax.collapse_sum_like(lv1_adjoint, x)
+                lv11 = relax.collapse_sum_like(lv3_adjoint, y)
+                lv21 = relax.collapse_sum_like(lv1_adjoint, y)
+                y_adjoint = relax.add(lv11, lv21)
+                lv31 = relax.collapse_sum_like(lv3_adjoint, z)
+                lv41 = relax.collapse_sum_like(lv2_adjoint, z)
+                z_adjoint = relax.add(lv31, lv41)
+                lv51 = relax.negative(lv2_adjoint)
+                u_adjoint = relax.collapse_sum_like(lv51, u)
+                R.output(lv6, x_adjoint, y_adjoint, z_adjoint, u_adjoint)
+            return (lv6, (x_adjoint, y_adjoint, z_adjoint, u_adjoint))
+
+    After1 = relax.transform.SimpleAD(func_name="main", target="lv6")(Before)
+    assert_structural_equal(After1, Expected1)
+
+    @tvm.script.ir_module
+    class Expected2:
+        @R.function
+        def main(x: Tensor((5, 5), "float32"),
+                 y: Tensor((5, 5), "float32"),
+                 z: Tensor((5, 5), "float32"),
+                 u: Tensor((5, 5), "float32")):
+            with R.dataflow():
+                lv1 = relax.add(x, y)
+                lv2 = relax.sub(z, u)
+                lv3 = relax.add(y, z)
+                lv4 = relax.add(lv1, lv2)
+                lv5 = relax.add(lv4, lv3)
+                lv6 = relax.sum(lv5)
+                lv6_adjoint = relax.ones_like(lv6)
+                lv = relax.ones_like(lv5)
+                lv5_adjoint = relax.multiply(lv6_adjoint, lv)
+                lv4_adjoint = relax.collapse_sum_like(lv5_adjoint, lv4)
+                lv3_adjoint = relax.collapse_sum_like(lv5_adjoint, lv3)
+                lv2_adjoint = relax.collapse_sum_like(lv4_adjoint, lv2) # could be optimized
+                lv1_adjoint = relax.collapse_sum_like(lv4_adjoint, lv1)
+                x_adjoint = relax.collapse_sum_like(lv1_adjoint, x)
+                lv11 = relax.collapse_sum_like(lv3_adjoint, y)
+                lv21 = relax.collapse_sum_like(lv1_adjoint, y)
+                y_adjoint = relax.add(lv11, lv21)
+                R.output(lv6, x_adjoint, y_adjoint)
+            return (lv6, (x_adjoint, y_adjoint))
+
+
+    After2 = relax.transform.SimpleAD(func_name="main", target="lv6", require_grads=["x", "y"])(Before)
+    assert_structural_equal(After2, Expected2)
+
 
 def test_mlp_script():
     @tvm.script.ir_module
@@ -141,7 +265,7 @@ def test_batch_mlp_script():
     check_mod_grad_equal(Expected, After, "main")
 
 def test_mlp_blockbuilder():
-    layers, in_size, out_size, hidden_size, batch_size = 3, 5, 5, 5, 5
+    layers, in_size, out_size, hidden_size, batch_size = 3, 5, 5, 5, 4
 
     ty = rx.DynTensorType(dtype="float32")
 
@@ -186,55 +310,5 @@ def test_mlp_blockbuilder():
         return loss.numpy()
     check_numerical_grads(func, [i.numpy() for i in args], [i.numpy() for i in grad])
 
-def test_binding_uses():
-    # This case tests:
-    # - Different type of bindings: assign binding & call binding;
-    # - One def and multiple uses.
-    # - Unused variable in module
-    @tvm.script.ir_module
-    class Before:
-        @R.function
-        def main(x: Tensor((5, 5), "float32"),
-                 y: Tensor((5,), "float32"),
-                 z: Tensor((5,), "float32"),
-                 u: Tensor((5,), "float32")):
-            with R.dataflow():
-                lv1 = x
-                lv2 = relax.add(x, y)
-                lv3 = relax.add(lv2, y)
-                lv4 = relax.add(x, lv3)
-                lv5 = lv3
-                lv6 = relax.add(x, lv5)
-                lv7 = relax.sum(lv4)
-                lv8 = relax.add(lv6, z)
-                R.output(lv7)
-            return lv7
-    After = relax.transform.SimpleAD(func_name="main", target="lv7")(Before)
-    # After.show()
-
-    args = [rand("float32", (5, 5)), rand("float32", (5,)), rand("float32", (5,)), rand("float32", (5,))]
-    output, grads = execute_mod(After, "main", *args)
-    assert_allclose(output[0].numpy(), 2 * args[0].numpy() + 2 * args[1].numpy())
-    expected_grads_nd = [2 * np.ones_like(args[0].numpy()),
-                         10 * np.ones_like(args[1].numpy()),
-                         np.zeros_like(args[2].numpy()),
-                         np.zeros_like(args[3].numpy())]
-
-    for i, j in zip(grads, expected_grads_nd):
-        assert_allclose(i.numpy(), j)
-
-
-
-# TODO:
-# - [x] The transformed function should replicate all bindings from the original function and return the same values;
-# - [] User can determine which inputs to differentiate or (by default) all inputs will be differentiated. Tests can cover these two cases;
-# - [x] The return type & value should be correct;
-# - [x] And we can also test two models: hand written one layer perceptron and hand written batch one layer perceptron.
-# - [x] Besides, we have found a test function named check_numerical_grads  in python/tvm/testing/utils.py . Using that maybe we can test the MLP numerically.
-
 if __name__ == "__main__":
-    # pytest.main([__file__])
-    # test_mlp_script()
-    # test_batch_mlp_script()
-    # test_mlp_blockbuilder()
-    test_binding_uses()
+    pytest.main([__file__])

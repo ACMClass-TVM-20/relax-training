@@ -142,8 +142,8 @@ print("-------------------------------")
 MultiLayerPerceptron.show()
 
 # # build and run
-# ex = relax.vm.build(TIRModule, target="llvm")
-# vm = relax.VirtualMachine(ex, tvm.cpu())
+ex = relax.vm.build(TIRModule, target="llvm")
+vm = relax.VirtualMachine(ex, tvm.cpu())
 
 # # """
 # #     train
