@@ -226,7 +226,7 @@ def test_batch_mlp_script():
     @tvm.script.ir_module
     class Before:
         @R.function
-        def main(x: Tensor((5, 20), "float32"), # x shall be 2d tensor due to restriction of matmul
+        def main(x: Tensor((5, 20), "float32"),
                  w0: Tensor((20, 10), "float32"),
                  b0: Tensor((10,), "float32"),
                  label: Tensor((5, 10), "float32")):
