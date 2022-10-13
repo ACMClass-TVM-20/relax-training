@@ -251,14 +251,12 @@ def prod(data, axis=None, keepdims=False):
 
 
 def collapse_sum(data, target_shape):
-    """TODO
+    """Python correspondence of the topi operator collapse_sum.
 
     Parameters
     ----------
     data : tvm.te.Tensor
         The input tvm tensor
-
-    
 
     Returns
     -------
