@@ -72,13 +72,8 @@ namespace relax {
 
 class SimpleADMutator : public ExprMutator {
  public:
-  explicit SimpleADMutator(IRModule mod, const String& target_name,
-                           const Array<String>& require_grad_names)
-      : ExprMutator(mod), target_name_(target_name), require_grad_names_() {
-    for (const String& name: require_grad_names) {
-      require_grad_names_.emplace(name);
-    }
-  }
+  explicit SimpleADMutator(IRModule mod, const Array<Var>& require_grads)
+      : ExprMutator(mod), require_grads(require_grads) {}
 
   Expr VisitExpr_(const FunctionNode* node) override {
     ICHECK(node->body->IsInstance<SeqExprNode>());
@@ -95,7 +90,7 @@ class SimpleADMutator : public ExprMutator {
     }
 
     for (const auto& v: node->params) {
-      if (require_grad_names_.empty() || require_grad_names_.count(v->name_hint())) {
+      if (require_grads.empty() || CheckArrayContains(require_grads, v)) {
         CreateAdjointVar(v, false);
       }
       else {
@@ -103,27 +98,25 @@ class SimpleADMutator : public ExprMutator {
       }
     }
 
-    // if target is not specified
-    if (target_name_.empty()) {
-      if (const auto* node = seq_expr->body.as<VarNode>()) {
-        const Var& body_var = GetRef<Var>(node);
-        CheckTarget(body_var);
-        CreateAdjointVar(body_var, true);
-        InitGrad(adjoint_var_map[body_var], body_var);
-      }
-      else {
-        LOG(FATAL) << "the body of the function (the default target) is not a relax.Var" << std::endl;
-      }
+    // the return value of the function will be treated as target
+    if (const auto* node = seq_expr->body.as<VarNode>()) {
+      target = GetRef<Var>(node);
+      CheckTarget(target);
+      CreateAdjointVar(target, true);
+      InitGrad(adjoint_var_map[target], target);
+    }
+    else {
+      LOG(FATAL) << "the body of the function (the default target) is not a relax.Var";
     }
 
-    // reverse-mode
+    // reverse-mode ad
     for (int i = block->bindings.size()-1; i >= 0; --i) {
       if (!block->bindings[i]->IsInstance<VarBindingNode>()) continue;
       const VarBindingNode* binding = block->bindings[i].as<VarBindingNode>();
       VisitBinding_(binding);
     }
 
-    // handle the return
+    // handle the return values and types
     Array<Expr> out_expr, out_adjoints;
     Array<Type> ret_type, out_adjoints_type;
     out_expr.push_back(seq_expr->body);
@@ -131,7 +124,7 @@ class SimpleADMutator : public ExprMutator {
 
     // emit the input adjoints
     for (const auto& param: node->params) {
-      if (require_grad_names_.empty() || require_grad_names_.count(param->name_hint())) {
+      if (require_grads.empty() || CheckArrayContains(require_grads, param)) {
         const Var& adjoint_var = adjoint_var_map[param];
         if (adjoint_expr_map.count(param)) {
           BindAndEmit(adjoint_var, adjoint_expr_map[param]);
@@ -157,18 +150,12 @@ class SimpleADMutator : public ExprMutator {
     CreateAdjointVar(binding->var, true);
     const Var& adjoint_var = adjoint_var_map[binding->var];
 
-    // must be output or expr in ignored output's AST
-    if (adjoint_expr_map.count(binding->var) == 0) {
-      if (target_name_.empty() || target_name_ != binding->var->name_hint()) {
-        return;
-      }
-      // if target is specified
-      CheckTarget(binding->var);
-      InitGrad(adjoint_var, binding->var);
-    }
-    else {
+    if (adjoint_expr_map.count(binding->var) != 0) {
       // meet a def
       BindAndEmit(adjoint_var, adjoint_expr_map[binding->var]);
+    } else if (binding->var != target) {
+      // not target and can be neglected
+      return;
     }
 
     // back prop.
@@ -200,6 +187,17 @@ class SimpleADMutator : public ExprMutator {
   }
 
  private:
+  template<typename T>
+  static bool CheckArrayContains(const Array<T> array, T value) {
+    for (auto i : array) {
+      if (i == value) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+
   void CreateAdjointVar(const Var& v, bool is_dataflow_var) {
     // the adjoint var has been created
     if (adjoint_var_map.count(v) != 0) return;
@@ -259,10 +257,10 @@ class SimpleADMutator : public ExprMutator {
 
   void CheckTarget(const Expr& e) {
     ICHECK(!e->IsInstance<DataflowVarNode>()) << "not an output node";
-    ICHECK(e->checked_type_.as<DynTensorTypeNode>()) << "target must be a DynTensorType" << std::endl;
-    ICHECK(e->shape().as<ShapeExprNode>()) << "error when getting target shape" << std::endl;
+    ICHECK(e->checked_type_.as<DynTensorTypeNode>()) << "target must be a DynTensorType";
+    ICHECK(e->shape().as<ShapeExprNode>()) << "error when getting target shape";
     const auto* shape_node = e->shape().as<ShapeExprNode>();
-    ICHECK(shape_node->values.size() == 0) << "target must be a scalar" << std::endl;
+    ICHECK(shape_node->values.size() == 0) << "target must be a scalar";
   }
 
   void InitGrad(const Var& adjoint_var, const Var& var) {
@@ -270,9 +268,8 @@ class SimpleADMutator : public ExprMutator {
     BindAndEmit(adjoint_var, Call(init_op, {var}));
   }
 
-  // specified sets
-  String target_name_;
-  std::unordered_set<String> require_grad_names_;
+  Array<Var> require_grads;
+  Var target;
 
   // var to its adjoints var
   Map<Var, Var> adjoint_var_map;
@@ -292,31 +289,44 @@ class SimpleADMutator : public ExprMutator {
  * \param require_grad_names The relax variables which need adjoints. Must be inputs.
  * \return The module after AD.
  */
-IRModule SimpleAD(IRModule m, const String& func_name, const String& target_name,
-                  const Array<String>& require_grad_names) {
-  IRModuleNode* new_module = m.CopyOnWrite();
-  auto mutator = SimpleADMutator(GetRef<IRModule>(new_module), target_name, require_grad_names);
-  bool found = false;
-  for (const auto& func_pr : m->functions) {
-    if (const auto* relax_f = func_pr.second.as<FunctionNode>()) {
-      Optional<String> gsymbol = relax_f->GetAttr<String>(tvm::attr::kGlobalSymbol);
-      if (gsymbol.defined() && gsymbol.value() == func_name) {
-        Function f_after = Downcast<Function>(mutator.VisitExpr(func_pr.second));
-        new_module->Update(func_pr.first, f_after);
-        found = true;
+IRModule SimpleAD(IRModule m, const GlobalVar &var, const Array<ObjectRef> &require_grads) {
+  BaseFunc base_func = m->Lookup(var);
+  if (auto* n = base_func.as<FunctionNode>()) {
+    auto f_before = GetRef<Function>(n);
+    Array<Var> require_grads_var;
+    for (auto input : require_grads) {
+      if (auto* n = input.as<IntImmNode>()) {
+        int64_t idx = GetRef<Integer>(n).IntValue();
+        require_grads_var.push_back(f_before->params[idx]);
+      } else if (auto *n = input.as<VarNode>()){
+        require_grads_var.push_back(GetRef<Var>(n));
+      } else {
+        LOG(FATAL) << "require_grads argument of the SimpleAD call has wrong type";
       }
     }
+
+    IRModuleNode* new_module_node = m.CopyOnWrite();
+    auto new_module = GetRef<IRModule>(new_module_node);
+    auto mutator = SimpleADMutator(new_module, require_grads_var);
+
+    auto adjoint_var = GlobalVar(var->name_hint + "_adjoint");
+    Function f_after = Downcast<Function>(mutator.VisitExpr(f_before));
+    f_after = WithAttr(f_after, tvm::attr::kGlobalSymbol, adjoint_var->name_hint);
+    new_module->Add(adjoint_var, f_after);
+
+    return new_module;
+  } else {
+    LOG(FATAL) << "Relax function " << var->name_hint << " not found";
+    return m;
   }
-  ICHECK(found) << "function " << func_name << " not found" << std::endl;
-  return GetRef<IRModule>(new_module);
 }
 
 namespace transform {
 
-Pass SimpleAD(String func_name, String target_name, Array<String> require_grad_names) {
+Pass SimpleAD(GlobalVar func, Array<ObjectRef> require_grads) {
   runtime::TypedPackedFunc<IRModule(IRModule, PassContext)> pass_func =
       [=](IRModule mod, PassContext pc) {
-        return relax::SimpleAD(mod, func_name, target_name, require_grad_names);
+        return relax::SimpleAD(mod, func, require_grads);
       };
   return CreateModulePass(/*pass_function=*/pass_func,
                           /*opt_level=*/0,
