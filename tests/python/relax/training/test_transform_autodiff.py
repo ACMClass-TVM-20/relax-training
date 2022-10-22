@@ -423,7 +423,7 @@ def test_tuple3():
                 z1 = z0[1]
                 z2 = z1[0]
                 z3 = z2[1]
-                z4 = relax.add(z3, y)
+                z4 = relax.multiply(z3, y)
                 z10 = relax.Tuple((z3, y))
                 z5 = z10[1]
                 z6 = relax.add(z5, z4)
@@ -444,16 +444,16 @@ def test_tuple3():
 
     _, grad = execute_mod(After, "main", x1, x2, y)
     
-    def func(x0, x1, y):
-        loss = execute_mod(Before, "main", x0, x1, y)
+    def func(*inputs):
+        loss = execute_mod(Before, "main", *[tvm.nd.array(i) for i in inputs])
         return loss.numpy()
-
+    print(grad[0], grad[1], grad[2])
     check_numerical_grads(func, args_numpy, [i.numpy() for i in grad])
 
 
 if __name__ == "__main__":
-    # pytest.main([__file__])
+    pytest.main([__file__])
     # test_tuple1()
     # test_tuple2()
-    test_tuple3()
+    # test_tuple3()
     

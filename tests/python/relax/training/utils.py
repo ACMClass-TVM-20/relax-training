@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+from python.tvm.relax import Call
 import tvm
 from tvm.ir.module import IRModule
 from tvm import topi, relax, te
@@ -23,7 +24,6 @@ class LowerToTensorIR(relax.PyExprMutator):
     def visit_call_(self, call):
         call = self.visit_expr_post_order(call)
         if isinstance(call, relax.Call) and call.op in self.op_map:
-            print("visited: ", call.op, call.args[0])
             return self.op_map[call.op](self.builder_, call)
         return call
 
@@ -106,9 +106,8 @@ def map_collapse_sum_like(bb, call):
     return bb.call_te(te_collapse_sum_like, call.args[0], call.args[1])
 
 def map_zeros(bb, call):
-    def te_zeros(shape):
-        return topi.full(shape, "float32", 1.0)
-    return bb.call_te(te_zeros, call.args[0])
+    shape_values = [prim_expr.value for prim_expr in call.args[0].values]
+    return tvm.relay.const(np.zeros(shape_values))
 
 
 op_map = {
