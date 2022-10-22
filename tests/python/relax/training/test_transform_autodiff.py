@@ -364,27 +364,6 @@ def test_mlp_blockbuilder():
         return loss.numpy()
     check_numerical_grads(func, [i.numpy() for i in args], [i.numpy() for i in grad])
 
-def test_tuple():
-    @tvm.script.ir_module
-    class Before:
-        @R.function
-        def main(x: Tuple(Tensor((10, 5), "float32"), Tensor((10, 5), "float32")),
-                 y: Tensor((10, 5), "float32")):
-            with R.dataflow():
-                z0 = (x, (x, x))
-                z1 = z0[1]
-                z2 = z1[0]
-                z3 = z2[1]
-                z4 = relax.add(z3, y)
-                z10 = relax.Tuple(z3, y)
-                z5 = relax.TupleGetItem(z10, 1)
-                z6 = relax.add(z5, z4)
-                z7 = relax.TupleGetItem(x, 0)
-                z8 = relax.add(z7, z6)
-                z9 = relax.sum(z8)
-                R.output(z9)
-            return z9
-
 
 def test_gradient_api():
     @tvm.script.ir_module
@@ -430,6 +409,129 @@ def test_gradient_api():
     assert_structural_equal(after_func, After["main_adjoint"])
     assert_structural_equal(after_func1, After["main_adjoint"])
 
+def test_tuple1():
+    @tvm.script.ir_module
+    class Before:
+        @R.function
+        def main(x1: Tensor((1, 10), "float32"),
+                 y1: Tensor((1, 10), "float32"),
+                 x2: Tensor((1, 10), "float32"),
+                 y2: Tensor((1, 10), "float32"),
+                 z: Tensor((1, 10), "float32")):
+            with R.dataflow():
+                t1 = (x1, y1)
+                lv1 = relax.add(t1[0], t1[1])
+                t2 = (x2, y2)
+                lv2 = relax.sub(t2[1], lv1)
+                lv3 = relax.multiply(lv2, t2[0])
+                loss = relax.nn.softmax_cross_entropy(lv3, z)
+                R.output(loss)
+            return loss
+    
+    After = relax.transform.SimpleAD(Before.get_global_var("main"))(Before)
+
+    After.show()
+    
+    args = []
+    for arg in After["main_adjoint"].params[:-1]:
+        shape = [int(l) for l in arg.shape]
+        args.append(rand("float32", *shape))
+    
+    z = np.random.rand(1, 10).astype(np.float32)
+    z /= z.sum(axis=1, keepdims=True)
+    args.append(tvm.nd.array(z))
+
+    _, grad = execute_mod(After, "main_adjoint", *args)
+    
+    def func(*inputs):
+        loss = execute_mod(Before, "main", *[tvm.nd.array(i) for i in inputs])
+        return loss.numpy()
+
+    check_numerical_grads(func, [i.numpy() for i in args], [i.numpy() for i in grad])
+
+
+def test_tuple2():
+    @tvm.script.ir_module
+    class Before:
+        @R.function
+        def main(x1: Tensor((1, 10), "float32"),
+                 y1: Tensor((1, 10), "float32"),
+                 x2: Tensor((1, 10), "float32"),
+                 y2: Tensor((1, 10), "float32"),
+                 z: Tensor((1, 10), "float32")):
+            with R.dataflow():
+                t = ((x1, y1), (x2, y2))
+                t0 = t[0]
+                t1 = t[1]
+                lv1 = relax.add(t0[0], t0[1])
+                lv2 = relax.sub(t1[1], lv1)
+                lv3 = relax.multiply(lv2, t1[0])
+                loss = relax.nn.softmax_cross_entropy(lv3, z)
+                R.output(loss)
+            return loss
+    
+    After = relax.transform.SimpleAD(Before.get_global_var("main"))(Before)
+    After.show()
+
+    args = []
+    for arg in After["main_adjoint"].params[:-1]:
+        shape = [int(l) for l in arg.shape]
+        args.append(rand("float32", *shape))
+    
+    z = np.random.rand(1, 10).astype(np.float32)
+    z /= z.sum(axis=1, keepdims=True)
+    args.append(tvm.nd.array(z))
+
+    _, grad = execute_mod(After, "main_adjoint", *args)
+    
+    def func(*inputs):
+        loss = execute_mod(Before, "main", *[tvm.nd.array(i) for i in inputs])
+        return loss.numpy()
+
+    check_numerical_grads(func, [i.numpy() for i in args], [i.numpy() for i in grad])
+
+
+def test_tuple3():
+    @tvm.script.ir_module
+    class Before:
+        @R.function
+        def main(x0: Tensor((10, 5), "float32"),
+                 x1: Tensor((10, 5), "float32"),
+                 y: Tensor((10, 5), "float32")):
+            with R.dataflow():
+                x = (x0, x1)
+                z0 = (x, (x, x))
+                z1 = z0[1]
+                z2 = z1[0]
+                z3 = z2[1]
+                z4 = relax.multiply(z3, y)
+                z10 = relax.Tuple((z3, y))
+                z5 = z10[1]
+                z6 = relax.add(z5, z4)
+                z7 = relax.TupleGetItem(x, 0)
+                z8 = relax.add(z7, z6)
+                z9 = relax.sum(z8)
+                R.output(z9)
+            return z9
+    
+    Before.show()
+    After = relax.transform.SimpleAD(Before.get_global_var("main"))(Before)
+    After.show()
+    
+    x1 = rand("float32", *(10, 5))
+    x2 = rand("float32", *(10, 5))
+    y = rand("float32", *(10, 5))
+    args_numpy = [x1.numpy(), x2.numpy(), y.numpy()]
+
+    _, grad = execute_mod(After, "main_adjoint", x1, x2, y)
+    
+    def func(*inputs):
+        loss = execute_mod(Before, "main", *[tvm.nd.array(i) for i in inputs])
+        return loss.numpy()
+    
+    check_numerical_grads(func, args_numpy, [i.numpy() for i in grad])
+
 
 if __name__ == "__main__":
     pytest.main([__file__])
+    # test_tuple1()

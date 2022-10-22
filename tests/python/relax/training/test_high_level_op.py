@@ -62,6 +62,7 @@ def gen_and_run(op, *input_data):
     target = tvm.target.Target("llvm")
     bb.get().show()
     mod = LowerToTensorIRPass()(bb.get())
+    # mod.show()
     ex = relax.vm.build(mod, target)
     vm = relax.VirtualMachine(ex, tvm.cpu())
     return vm["main"](*tvm_data)
