@@ -80,7 +80,7 @@ Type InferTypeUnaryBroadcast(const Call& call, DiagnosticContext diag_ctx) {
   if (!input_ty) {
     diag_ctx.EmitFatal(Diagnostic::Error(call->span)
                        << "Input should be DynTensor, but got "
-                       << call->args[0]->checked_type()->GetTypeKey());
+                       << call->args[0]->checked_type()->GetTypeKey() << " " << call);
   }
   return GetRef<DynTensorType>(input_ty);
 }
@@ -126,6 +126,25 @@ Type InferTypeSum(const Call& call, DiagnosticContext diag_ctx) {
   return DynTensorType(output_ndim, output_dtype);
 }
 
+Optional<Expr> InferShapeZeros(const Call& call, DiagnosticContext diag_ctx) {
+  if (call->args.size() != 1) {
+    diag_ctx.EmitFatal(Diagnostic::Error(call->span) << "Zeros op should have 1 arguments");
+  }
+  return call->args[0];
+}
+
+Type InferTypeZeros(const Call& call, DiagnosticContext diag_ctx) {
+  if (call->args.size() != 1) {
+    diag_ctx.EmitFatal(Diagnostic::Error(call->span) << "Zeros op should have 1 arguments");
+  }
+  Type type0 = call->args[0]->checked_type();
+  auto* t0 = type0.as<ShapeTypeNode>();
+  if (!t0) {
+    diag_ctx.EmitFatal(Diagnostic::Error(call->span) << "Zeros op should take a ShapeExpr");
+  }
+  return DynTensorType(call->args[0].as<ShapeExprNode>()->values.size(), DataType::Float(32));
+}
+
 
 TVM_REGISTER_NODE_TYPE(UniqueAttrs);
 TVM_REGISTER_NODE_TYPE(MaxPool2dAttrs);
@@ -158,6 +177,10 @@ RELAX_REGISTER_UNARY_OP("log");
 RELAX_REGISTER_UNARY_OP("negative");
 RELAX_REGISTER_UNARY_OP("ones_like");
 RELAX_REGISTER_UNARY_OP("zeros_like");
+RELAY_REGISTER_OP("relax.zeros")
+    .set_num_inputs(1)
+    .set_attr<FInferShape>("FInferShape", InferShapeZeros)
+    .set_attr<FInferType>("FInferType", InferTypeZeros);
 
 }  // namespace relax
 }  // namespace tvm

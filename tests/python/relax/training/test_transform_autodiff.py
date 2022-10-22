@@ -14,7 +14,8 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from __future__ import annotations  # must import to defer parsing of annotations
+from __future__ import annotations
+from importlib.metadata import requires  # must import to defer parsing of annotations
 
 import numpy as np
 import pytest
@@ -45,8 +46,7 @@ def check_mod_grad_equal(mod1, mod2, func_name):
         args.append(rand("float32", *shape))
     res1, grad1 = execute_mod(mod1, func_name, *args)
     res2, grad2 = execute_mod(mod2, func_name, *args)
-    for (l, r) in zip(res1, res2):
-        assert_allclose(l.numpy(), r.numpy())
+    assert_allclose(res1.numpy(), res2.numpy())
     for (l, r) in zip(grad1, grad2):
         assert_allclose(l.numpy(), r.numpy())
 
@@ -74,7 +74,7 @@ def test_binding_uses():
                 lv8 = relax.add(lv6, z) # unused
                 R.output(lv7)
             return lv7
-    After = relax.transform.SimpleAD(func_name="main", target="lv7")(Before)
+    After = relax.transform.SimpleAD(func_name="main")(Before)
 
     args = [rand("float32", 5, 5), rand("float32", 5), rand("float32", 5), rand("float32", 5)]
     output, grads = execute_mod(After, "main", *args)
@@ -138,7 +138,7 @@ def test_default_require_grads():
                 R.output(lv6, x_adjoint, y_adjoint, z_adjoint, u_adjoint)
             return (lv6, (x_adjoint, y_adjoint, z_adjoint, u_adjoint))
 
-    After1 = relax.transform.SimpleAD(func_name="main", target="lv6")(Before)
+    After1 = relax.transform.SimpleAD(func_name="main")(Before)
     assert_structural_equal(After1, Expected1)
 
     @tvm.script.ir_module
@@ -170,7 +170,7 @@ def test_default_require_grads():
             return (lv6, (x_adjoint, y_adjoint))
 
 
-    After2 = relax.transform.SimpleAD(func_name="main", target="lv6", require_grads=["x", "y"])(Before)
+    After2 = relax.transform.SimpleAD(func_name="main", require_grads=["x", "y"])(Before)
     assert_structural_equal(After2, Expected2)
 
 
@@ -192,8 +192,8 @@ def test_mlp_script():
                 lv0 = relax.nn.matmul(x, w0)
                 out = relax.add(lv0, b0)
                 loss = relax.nn.softmax_cross_entropy(out, label)
-                R.output(out, loss)
-            return out, loss
+                R.output(loss)
+            return loss
 
     @tvm.script.ir_module
     class Expected:
@@ -215,10 +215,10 @@ def test_mlp_script():
                 lv3 = relax.nn.matmul(lv2, lv0_adjoint)
                 w0_adjoint = relax.collapse_sum_like(lv3, w0)
                 b0_adjoint = relax.collapse_sum_like(out_adjoint, b0)
-                R.output(out, loss, w0_adjoint, b0_adjoint)
-            return ((out, loss), (w0_adjoint, b0_adjoint))
+                R.output(loss, w0_adjoint, b0_adjoint)
+            return (loss, (w0_adjoint, b0_adjoint))
 
-    After = relax.transform.SimpleAD(func_name="main", target="loss", require_grads=["w0", "b0"])(Before)
+    After = relax.transform.SimpleAD(func_name="main", require_grads=["w0", "b0"])(Before)
     assert_structural_equal(After, Expected)
     check_mod_grad_equal(Expected, After, "main")
 
@@ -226,7 +226,7 @@ def test_batch_mlp_script():
     @tvm.script.ir_module
     class Before:
         @R.function
-        def main(x: Tensor((5, 20), "float32"),
+        def main(x: Tensor((5, 20), "float32"), # x shall be 2d tensor due to restriction of matmul
                  w0: Tensor((20, 10), "float32"),
                  b0: Tensor((10,), "float32"),
                  label: Tensor((5, 10), "float32")):
@@ -234,8 +234,8 @@ def test_batch_mlp_script():
                 lv0 = relax.nn.matmul(x, w0)
                 out = relax.add(lv0, b0)
                 loss = relax.nn.softmax_cross_entropy(out, label)
-                R.output(out, loss)
-            return out, loss
+                R.output(loss)
+            return loss
 
     @tvm.script.ir_module
     class Expected:
@@ -257,10 +257,11 @@ def test_batch_mlp_script():
                 lv3 = relax.nn.matmul(lv2, lv0_adjoint)
                 w0_adjoint = relax.collapse_sum_like(lv3, w0)
                 b0_adjoint = relax.collapse_sum_like(out_adjoint, b0)
-                R.output(out, loss, w0_adjoint, b0_adjoint)
-            return ((out, loss), (w0_adjoint, b0_adjoint))
-
-    After = relax.transform.SimpleAD(func_name="main", target="loss", require_grads=["w0", "b0"])(Before)
+                R.output(loss, w0_adjoint, b0_adjoint)
+            return (loss, (w0_adjoint, b0_adjoint))
+    param = Expected["main"].params
+    [param[1], param[3]]
+    After = relax.transform.SimpleAD(func_name="main", require_grads=["w0", "b0"])(Before)
     assert_structural_equal(After, Expected)
     check_mod_grad_equal(Expected, After, "main")
 
@@ -287,9 +288,8 @@ def test_mlp_blockbuilder():
                 lv1 = bb.emit(relax.op.add(lv0, b_list[i]))
                 current = bb.emit(relax.op.nn.relu(lv1) if i < layers - 1 else lv1)
             loss = bb.emit(relax.op.nn.softmax_cross_entropy(current, label_list[0]))
-            gv0 = bb.emit_output(current)
             gv1 = bb.emit_output(loss)
-        bb.emit_func_output((gv0, gv1))
+        bb.emit_func_output(gv1)
 
     Before = bb.get()
     After = relax.transform.SimpleAD("MLP", gv1)(Before)
@@ -306,9 +306,154 @@ def test_mlp_blockbuilder():
     _, grad = execute_mod(After, "MLP", *args)
 
     def func(*inputs):
-        _, loss = execute_mod(Before, "MLP", *[tvm.nd.array(i) for i in inputs])
+        loss = execute_mod(Before, "MLP", *[tvm.nd.array(i) for i in inputs])
         return loss.numpy()
     check_numerical_grads(func, [i.numpy() for i in args], [i.numpy() for i in grad])
 
+def test_tuple1():
+    @tvm.script.ir_module
+    class Before:
+        @R.function
+        def main(x1: Tensor((1, 10), "float32"),
+                 y1: Tensor((1, 10), "float32"),
+                 x2: Tensor((1, 10), "float32"),
+                 y2: Tensor((1, 10), "float32"),
+                 z: Tensor((1, 10), "float32")):
+            with R.dataflow():
+                t1 = (x1, y1)
+                lv1 = relax.add(t1[0], t1[1])
+                t2 = (x2, y2)
+                lv2 = relax.sub(t2[1], lv1)
+                lv3 = relax.multiply(lv2, t2[0])
+                loss = relax.nn.softmax_cross_entropy(lv3, z)
+                R.output(loss)
+            return loss
+    
+    After = relax.transform.SimpleAD(func_name="main")(Before)
+
+    After.show()
+    
+    args = []
+    for arg in After["main"].params[:-1]:
+        shape = [int(l) for l in arg.shape]
+        args.append(rand("float32", *shape))
+    
+    z = np.random.rand(1, 10).astype(np.float32)
+    z /= z.sum(axis=1, keepdims=True)
+    args.append(tvm.nd.array(z))
+
+    _, grad = execute_mod(After, "main", *args)
+    
+    def func(*inputs):
+        loss = execute_mod(Before, "main", *[tvm.nd.array(i) for i in inputs])
+        return loss.numpy()
+
+    check_numerical_grads(func, [i.numpy() for i in args], [i.numpy() for i in grad])
+
+
+def test_tuple2():
+    @tvm.script.ir_module
+    class Before:
+        @R.function
+        def main(x1: Tensor((1, 10), "float32"),
+                 y1: Tensor((1, 10), "float32"),
+                 x2: Tensor((1, 10), "float32"),
+                 y2: Tensor((1, 10), "float32"),
+                 z: Tensor((1, 10), "float32")):
+            with R.dataflow():
+                t = ((x1, y1), (x2, y2))
+                t0 = t[0]
+                t1 = t[1]
+                lv1 = relax.add(t0[0], t0[1])
+                lv2 = relax.sub(t1[1], lv1)
+                lv3 = relax.multiply(lv2, t1[0])
+                loss = relax.nn.softmax_cross_entropy(lv3, z)
+                R.output(loss)
+            return loss
+    
+    # @tvm.script.ir_module
+    # class Before:
+    #     @R.function
+    #     def main(x1: Tensor((1, 10), "float32"),
+    #              y1: Tensor((1, 10), "float32"),
+    #              x2: Tensor((1, 10), "float32"),
+    #              y2: Tensor((1, 10), "float32"),
+    #              z: Tensor((1, 10), "float32")):
+    #         with R.dataflow():
+    #             lv1 = relax.add(x1, y1)
+    #             lv2 = relax.sub(y2, lv1)
+    #             lv3 = relax.multiply(lv2, x2)
+    #             loss = relax.nn.softmax_cross_entropy(lv3, z)
+    #             R.output(loss)
+    #         return loss
+    
+    After = relax.transform.SimpleAD(func_name="main")(Before)
+    After.show()
+
+    args = []
+    for arg in After["main"].params[:-1]:
+        shape = [int(l) for l in arg.shape]
+        args.append(rand("float32", *shape))
+    
+    z = np.random.rand(1, 10).astype(np.float32)
+    z /= z.sum(axis=1, keepdims=True)
+    args.append(tvm.nd.array(z))
+
+    _, grad = execute_mod(After, "main", *args)
+
+    print(grad[0])
+    
+    def func(*inputs):
+        loss = execute_mod(Before, "main", *[tvm.nd.array(i) for i in inputs])
+        return loss.numpy()
+
+    check_numerical_grads(func, [i.numpy() for i in args], [i.numpy() for i in grad])
+
+
+def test_tuple3():
+    @tvm.script.ir_module
+    class Before:
+        @R.function
+        def main(x0: Tensor((10, 5), "float32"),
+                 x1: Tensor((10, 5), "float32"),
+                 y: Tensor((10, 5), "float32")):
+            with R.dataflow():
+                x = (x0, x1)
+                z0 = (x, (x, x))
+                z1 = z0[1]
+                z2 = z1[0]
+                z3 = z2[1]
+                z4 = relax.add(z3, y)
+                z10 = relax.Tuple((z3, y))
+                z5 = z10[1]
+                z6 = relax.add(z5, z4)
+                z7 = relax.TupleGetItem(x, 0)
+                z8 = relax.add(z7, z6)
+                z9 = relax.sum(z8)
+                R.output(z9)
+            return z9
+    
+    Before.show()
+    After = relax.transform.SimpleAD(func_name="main")(Before)
+    After.show()
+    
+    x1 = rand("float32", *(10, 5))
+    x2 = rand("float32", *(10, 5))
+    y = rand("float32", *(10, 5))
+    args_numpy = [x1.numpy(), x2.numpy(), y.numpy()]
+
+    _, grad = execute_mod(After, "main", x1, x2, y)
+    
+    def func(x0, x1, y):
+        loss = execute_mod(Before, "main", x0, x1, y)
+        return loss.numpy()
+
+    check_numerical_grads(func, args_numpy, [i.numpy() for i in grad])
+
+
 if __name__ == "__main__":
-    pytest.main([__file__])
+    # pytest.main([__file__])
+    # test_tuple1()
+    # test_tuple2()
+    test_tuple3()
+    

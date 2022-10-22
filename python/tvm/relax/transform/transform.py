@@ -340,7 +340,7 @@ def FuseTIR() -> tvm.ir.transform.Pass:
     return _ffi_api.FuseTIR()
 
 
-def SimpleAD(func_name, target = "", require_grads = None) -> tvm.ir.transform.Pass:
+def SimpleAD(func_name, require_grads = None) -> tvm.ir.transform.Pass:
     """Simple high level reverse-mode auto-differentiation.
 
     Parameters
@@ -365,16 +365,13 @@ def SimpleAD(func_name, target = "", require_grads = None) -> tvm.ir.transform.P
     if not isinstance(require_grads, list):
         require_grads = [require_grads]
 
-    if not isinstance(target, str):
-        assert isinstance(target, tvm.relax.expr.Var)
-        target = target.name_hint
     for i in range(len(require_grads)):
         if not isinstance(require_grads[i], str):
             print(type(require_grads[i]), require_grads[i])
             assert isinstance(require_grads[i], tvm.relax.expr.Var)
             require_grads[i] = require_grads[i].name_hint
 
-    return _ffi_api.SimpleAD(func_name, target, require_grads)
+    return _ffi_api.SimpleAD(func_name, require_grads)
 
 
 def _wrap_class_function_pass(pass_cls, pass_info):
