@@ -27,18 +27,24 @@ from tvm.relax.testing import dump_ast
 import tvm.script
 import _gradient
 
-def execute_mod(mod, func_name, *args):
-    ex = relax.vm.build(TIRModule, target="llvm")
-    vm = relax.VirtualMachine(ex, tvm.cpu())
-
 @tvm.script.ir_module
 class Before:
     @R.function
-    def main(x: Tuple(Tensor((1, 784), "float32"))): # x shall be 2d tensor due to restriction of matmul
+    def main(x: Tuple(Tensor((10, 5), "float32"), Tensor((10, 5), "float32")),
+                y: Tensor((10, 5), "float32")):
         with R.dataflow():
-            y = x
-            R.output(y)
-        return y
+            z0 = (x, (x, x))
+            z1 = z0[1]
+            z2 = z1[0]
+            z3 = z2[1]
+            z4 = relax.add(z3, y)
+            z10 = relax.Tuple((z3, y))
+            z5 = relax.TupleGetItem(z10, 1)
+            z6 = relax.add(z5, z4)
+            z7 = relax.TupleGetItem(x, 0)
+            z8 = relax.add(z7, z6)
+            z9 = relax.sum(z8)
+            R.output(z9)
+        return z9
 
-ex = relax.vm.build(Before, target="llvm")
-vm = relax.VirtualMachine(ex, tvm.cpu())
+Before.show()
