@@ -17,16 +17,15 @@
  * under the License.
  */
 
-#ifndef TVM_RELAX_OP_NN_NN_H_
-#define TVM_RELAX_OP_NN_NN_H_
+#ifndef TVM_RELAX_OP_TRAINING_TRAINING_NN_H_
+#define TVM_RELAX_OP_TRAINING_TRAINING_NN_H_
 
-#include <tvm/relax/expr.h>
-#include <tvm/relax/type.h>
+#include "training.h"
 
-#include "../op_common.h"
-#include "../tensor/unary.h"
 namespace tvm {
 namespace relax {
+
+/* Infer Shape & Type */
 
 Optional<Expr> InferShapeFlatten(const Call& call, DiagnosticContext diag_ctx) {
   if (call->args.size() != 1) {
@@ -226,7 +225,7 @@ Type InferTypeMatmul(const Call& call, DiagnosticContext diag_ctx) {
   return DynTensorType(output_ndim, output_dtype);
 }
 
-
 }  // namespace relax
 }  // namespace tvm
-#endif
+
+#endif  // TVM_RELAX_OP_TRAINING_TRAINING_NN_H_

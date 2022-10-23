@@ -82,6 +82,7 @@ def test_binding_uses():
                 R.output(lv7)
             return lv7
     After = relax.transform.SimpleAD(Before.get_global_var("main"))(Before)
+    # After.show()
 
     args = [rand("float32", 5, 5), rand("float32", 5), rand("float32", 5), rand("float32", 5)]
     output, grads = execute_mod(After, "main_adjoint", *args)
@@ -516,7 +517,7 @@ def test_tuple3():
     
     Before.show()
     After = relax.transform.SimpleAD(Before.get_global_var("main"))(Before)
-    After.show()
+    # After.show()
     
     x1 = rand("float32", *(10, 5))
     x2 = rand("float32", *(10, 5))
@@ -534,4 +535,4 @@ def test_tuple3():
 
 if __name__ == "__main__":
     pytest.main([__file__])
-    # test_tuple1()
+    # test_binding_uses()

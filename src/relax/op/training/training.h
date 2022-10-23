@@ -22,32 +22,32 @@
  * \brief A set of utilities and common functionality
  * for Relax ops.
  */
-#ifndef TVM_RELAX_OP_OP_COMMON_H_
-#define TVM_RELAX_OP_OP_COMMON_H_
+#ifndef TVM_RELAX_OP_TRAINING_TRANING_H_
+#define TVM_RELAX_OP_TRAINING_TRANING_H_
 
-#include <tvm/arith/analyzer.h>
-#include <tvm/relax/op_attr_types.h>
-#include <tvm/relay/expr.h>
-#include <tvm/relay/op.h>
+#include <tvm/relax/expr.h>
+#include <tvm/relax/type.h>
+
+#include "../op_common.h"
+#include "../tensor/unary.h"
 
 namespace tvm {
 namespace relax {
 
-bool EqualConstInt(const PrimExpr& lhs, int64_t value);
+/* Helper Macros */
 
-bool EqualCheck(const PrimExpr& lhs, const PrimExpr& rhs);
+#define RELAX_REGISTER_UNARY_OP_BASE(OpName, InferShape, InferType)   \
+  TVM_REGISTER_GLOBAL("relax.op." OpName).set_body_typed([](Expr e) { \
+    static const Op& op = Op::Get("relax." OpName);                   \
+    return Call(op, {e}, Attrs(), {});                                \
+  });                                                                 \
+  RELAY_REGISTER_OP("relax." OpName)                                  \
+      .set_num_inputs(1)                                              \
+      .add_argument("e", "Tensor", "The input tensor.")               \
+      .set_attr<FInferShape>("FInferShape", InferShape) \
+      .set_attr<FInferType>("FInferType", InferType)
 
-/*! Quick helper macro
- * - Expose a positional make function to construct the node.
- * - Register op to the registry.
- *
- * We make the decision to always only expose positional argument.
- * We will do rewrapping in the frontend to support language
- * sugars such as keyword arguments and default value.
- *
- * \param OpName the name of registry.
- */
-#define RELAX_REGISTER_BINARY_BROADCAST_OP(OpName)                                \
+#define RELAX_REGISTER_BINARY_OP_BASE(OpName, InferShape, InferType)                   \
   TVM_REGISTER_GLOBAL("relax.op." OpName).set_body_typed([](Expr lhs, Expr rhs) { \
     static const Op& op = Op::Get("relax." OpName);                               \
     return Call(op, {lhs, rhs}, Attrs(), {});                                     \
@@ -56,20 +56,9 @@ bool EqualCheck(const PrimExpr& lhs, const PrimExpr& rhs);
       .set_num_inputs(2)                                                          \
       .add_argument("lhs", "Tensor", "The left hand side tensor.")                \
       .add_argument("rhs", "Tensor", "The right hand side tensor.")               \
-      .set_attr<FInferShape>("FInferShape", InferShapeBinaryBroadcast)            \
-      .set_attr<FInferType>("FInferType", InferTypeBinaryBroadcast)
-
-#define RELAX_REGISTER_UNARY_OP(OpName)                               \
-  TVM_REGISTER_GLOBAL("relax.op." OpName).set_body_typed([](Expr e) { \
-    static const Op& op = Op::Get("relax." OpName);                   \
-    return Call(op, {e}, Attrs(), {});                                \
-  });                                                                 \
-  RELAY_REGISTER_OP("relax." OpName)                                  \
-      .set_num_inputs(1)                                              \
-      .add_argument("e", "Tensor", "The input tensor.")               \
-      .set_attr<FInferShape>("FInferShape", InferShapeUnaryBroadcast) \
-      .set_attr<FInferType>("FInferType", InferTypeUnaryBroadcast)
+      .set_attr<FInferShape>("FInferShape", InferShape)            \
+      .set_attr<FInferType>("FInferType", InferType)
 }  // namespace relax
 }  // namespace tvm
 
-#endif  // TVM_RELAX_OP_OP_COMMON_H_
+#endif  // TVM_RELAX_OP_TRAINING_TRANING_H_

@@ -108,6 +108,10 @@ def map_zeros(bb, call):
     shape_values = [prim_expr.value for prim_expr in call.args[0].values]
     return tvm.relay.const(np.zeros(shape_values))
 
+def map_ones(bb, call):
+    shape_values = [prim_expr.value for prim_expr in call.args[0].values]
+    return tvm.relay.const(np.ones(shape_values))
+
 
 op_map = {
   "relax.nn.dense": map_dense,
@@ -128,6 +132,7 @@ op_map = {
   "relax.log": map_log,
   "relax.sum": map_sum,
   "relax.zeros": map_zeros,
+  "relax.ones": map_ones,
 }
 
 @tvm.ir.transform.module_pass(opt_level=0, name="LowerToTensorIR")
