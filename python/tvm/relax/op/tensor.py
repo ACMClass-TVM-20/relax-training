@@ -85,6 +85,27 @@ def multiply(lhs: Expr, rhs: Expr) -> Expr:
     """
     return _ffi_api.multiply(lhs, rhs)
 
+def collapse_sum_like(lhs: Expr, rhs: Expr) -> Expr:
+    return _ffi_api.collapse_sum_like(lhs, rhs)
+
+def log(lhs: Expr) -> Expr:
+    return _ffi_api.log(lhs)
+
+def ones_like(lhs: Expr) -> Expr:
+    return _ffi_api.ones_like(lhs)
+
+def zeros_like(lhs: Expr) -> Expr:
+    return _ffi_api.zeros_like(lhs)
+
+def sum(lhs: Expr) -> Expr:
+    return _ffi_api.sum(lhs)
+
+def negative(lhs: Expr) -> Expr:
+    return _ffi_api.negative(lhs)
+
+def transpose(lhs: Expr) -> Expr:
+    return _ffi_api.transpose(lhs)
+
 
 def ewise_fma(e1: Expr, e2: Expr, e3: Expr) -> Expr:
     return _ffi_api.ewise_fma(e1, e2, e3)  # type: ignore
