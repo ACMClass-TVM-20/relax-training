@@ -18,39 +18,21 @@
  */
 
 #include "nn.h"
+#include "../tensor/binary.h"
 
 namespace tvm {
 namespace relax {
 
-RELAY_REGISTER_OP("relax.nn.dense")
-    .set_num_inputs(2)
-    .add_argument("e1", "Expr", "The input expression")
-    .add_argument("e2", "Expr", "The input expression")
-    .set_attr<FInferShape>("FInferShape", InferShapeDense)
-    .set_attr<FInferType>("FInferType", InferTypeDense);
-
-Expr MakeDense(Expr expr1, Expr expr2) {
-  static const Op& op = Op::Get("relax.nn.dense");
-  return Call(op, {expr1, expr2}, {}, {});
-}
-
-TVM_REGISTER_GLOBAL("relax.op.nn.dense").set_body_typed(MakeDense);
-
-RELAX_REGISTER_UNARY_OP("nn.softmax");
 
 RELAX_REGISTER_UNARY_OP("nn.relu");
+RELAX_REGISTER_UNARY_OP("nn.gradrelu_");
+RELAX_REGISTER_UNARY_OP("nn.softmax");
 
-RELAY_REGISTER_OP("relax.nn.flatten")
-    .set_num_inputs(1)
-    .add_argument("data", "Tensor", "The input tensor")
-    .set_attr<FInferShape>("FInferShape", InferShapeFlatten)
-    .set_attr<FInferType>("FInferType", InferTypeFlatten);
-
-Expr MakeFlatten(Expr data) {
-  static const Op& op = Op::Get("relax.nn.flatten");
-  return Call(op, {data}, {}, {});
-}
-TVM_REGISTER_GLOBAL("relax.op.nn.flatten").set_body_typed(MakeFlatten);
+RELAX_REGISTER_BINARY_OP_BASE("nn.dense", InferShapeDense, InferTypeDense);
+RELAX_REGISTER_BINARY_OP_BASE("nn.cross_entropy", InferShapeCrossEntropy, InferTypeCrossEntropy);
+RELAX_REGISTER_BINARY_OP_BASE("nn.flatten", InferShapeFlatten, InferTypeFlatten);
+RELAX_REGISTER_BINARY_OP_BASE("nn.softmax_cross_entropy", InferShapeCrossEntropy, InferTypeCrossEntropy);
+RELAX_REGISTER_BINARY_OP_BASE("nn.matmul", InferShapeMatmul, InferTypeMatmul);
 
 }  // namespace relax
 }  // namespace tvm

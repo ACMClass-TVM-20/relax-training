@@ -118,6 +118,115 @@ Type InferTypeDense(const Call& call, DiagnosticContext diag_ctx) {
   return DynTensorType(output_ndim, output_dtype);
 }
 
+
+Optional<Expr> InferShapeCrossEntropy(const Call& call, DiagnosticContext diag_ctx) {
+  if (call->args.size() != 2) {
+    diag_ctx.EmitFatal(Diagnostic::Error(call->span) << "CrossEnt op should have 2 arguments");
+  }
+  Expr shape0 = call->args[0]->shape();
+  Expr shape1 = call->args[1]->shape();
+  auto* s0 = shape0.as<ShapeExprNode>();
+  auto* s1 = shape1.as<ShapeExprNode>();
+  if (s0 && s1) {
+    return ShapeExpr(Array<PrimExpr>{});
+  } else {
+    return NullOpt;
+  }
+}
+
+Type InferTypeCrossEntropy(const Call& call, DiagnosticContext diag_ctx) {
+  if (call->args.size() != 2) {
+    diag_ctx.EmitFatal(Diagnostic::Error(call->span) << "CrossEntropy op should have 2 arguments");
+  }
+  Type type0 = call->args[0]->checked_type();
+  Type type1 = call->args[1]->checked_type();
+  auto* t0 = type0.as<DynTensorTypeNode>();
+  auto* t1 = type1.as<DynTensorTypeNode>();
+  if (!t0 || !t1) {
+    diag_ctx.EmitFatal(Diagnostic::Error(call->span)
+                       << "The 2 arguments of CrossEntropy should be DynTensor");
+  }
+
+  DataType output_dtype;
+  if (t0->IsUnknownDtype() || t1->IsUnknownDtype()) {
+    output_dtype = DataType::Void();
+  } else if (t0->dtype != t1->dtype) {
+    diag_ctx.EmitFatal(Diagnostic::Error(call->span) << "Data types " << t0->dtype << ", and"
+                                                     << t1->dtype << " must be equal for CrossEntropy");
+  } else {
+    output_dtype = t0->dtype;
+  }
+
+  int output_ndim = 0;
+  // if (t0->IsUnknownNdim() || t1->IsUnknownNdim()) {
+  //   output_ndim = -1;
+  // } else {
+  //   output_ndim = t0->ndim;
+  // }
+  return DynTensorType(output_ndim, output_dtype);
+}
+
+Optional<Expr> InferShapeMatmul(const Call& call, DiagnosticContext diag_ctx) {
+  if (call->args.size() != 2) {
+    diag_ctx.EmitFatal(Diagnostic::Error(call->span) << "Matmul op should have 2 arguments");
+  }
+  Expr shape0 = call->args[0]->shape();
+  Expr shape1 = call->args[1]->shape();
+  auto* s0 = shape0.as<ShapeExprNode>();
+  auto* s1 = shape1.as<ShapeExprNode>();
+  if (s0 && s1) {
+    std::vector<PrimExpr> output_shape;
+    size_t ndim0 = s0->values.size();
+    size_t ndim1 = s1->values.size();
+    if (ndim0 != 2 || ndim1 != 2) {
+      LOG(INFO) << ndim0;
+      LOG(INFO) << ndim1;
+      diag_ctx.EmitFatal(Diagnostic::Error(call->span)
+                         << "The 2 arguments of Matmul must be 2D Tensors");
+    }
+    if (!EqualCheck(s0->values[1], s1->values[0])) {
+      diag_ctx.EmitFatal(Diagnostic::Error(call->span)
+                         << "The number of columns of the first argument must equal to the number of rows of the second argument");
+    }
+    return ShapeExpr(Array<PrimExpr>{s0->values[0], s1->values[1]});
+  } else {
+    return NullOpt;
+  }
+}
+
+Type InferTypeMatmul(const Call& call, DiagnosticContext diag_ctx) {
+  if (call->args.size() != 2) {
+    diag_ctx.EmitFatal(Diagnostic::Error(call->span) << "Matmul op should have 2 arguments");
+  }
+  Type type0 = call->args[0]->checked_type();
+  Type type1 = call->args[1]->checked_type();
+  auto* t0 = type0.as<DynTensorTypeNode>();
+  auto* t1 = type1.as<DynTensorTypeNode>();
+  if (!t0 || !t1) {
+    diag_ctx.EmitFatal(Diagnostic::Error(call->span)
+                       << "The 2 arguments of Matmul should be DynTensor");
+  }
+
+  DataType output_dtype;
+  if (t0->IsUnknownDtype() || t1->IsUnknownDtype()) {
+    output_dtype = DataType::Void();
+  } else if (t0->dtype != t1->dtype) {
+    diag_ctx.EmitFatal(Diagnostic::Error(call->span) << "Data types " << t0->dtype << ", and"
+                                                     << t1->dtype << " must be equal for Matmul");
+  } else {
+    output_dtype = t0->dtype;
+  }
+
+  int output_ndim;
+  if (t0->IsUnknownNdim() || t1->IsUnknownNdim()) {
+    output_ndim = -1;
+  } else {
+    output_ndim = t0->ndim;
+  }
+  return DynTensorType(output_ndim, output_dtype);
+}
+
+
 }  // namespace relax
 }  // namespace tvm
 #endif

@@ -32,10 +32,20 @@ def conv2d(
 def relu(data: Expr) -> Expr:
     return _make.relu(data)
 
+def matmul(lhs: Expr, rhs: Expr) -> Expr:
+    return _make.matmul(lhs, rhs)
 
 def softmax(data: Expr) -> Expr:
     return _make.softmax(data)
 
+def gradrelu_(data: Expr) -> Expr:
+    return _make.gradrelu_(data)
+
+def cross_entropy(lhs: Expr, rhs: Expr) -> Expr:
+    return _make.cross_entropy(lhs, rhs)
+
+def softmax_cross_entropy(lhs: Expr, rhs: Expr) -> Expr:
+    return _make.softmax_cross_entropy(lhs, rhs)
 
 def flatten(data: Expr) -> Expr:
     return _make.flatten(data)
@@ -45,4 +55,3 @@ def max_pool2d(data: Expr, kernel_size, stride=None, padding=(0, 0), dilation=(1
     if stride is None:
         stride = kernel_size
     return _make.max_pool2d(data, kernel_size, stride, padding, dilation)
-
