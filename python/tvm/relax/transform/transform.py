@@ -18,13 +18,12 @@
 """Relax transformation passes."""
 import functools
 import inspect
-from tkinter import N
 import types
 from typing import Callable, Dict, Union, Optional, List
 import numpy as np
 
 import tvm.ir
-import tvm.relax as relax
+from tvm import relax
 from tvm.target import Target
 from tvm.meta_schedule.tune import TuneConfig
 from tvm.meta_schedule.database import PyDatabase

@@ -428,22 +428,22 @@ def test_tuple1():
                 loss = relax.nn.softmax_cross_entropy(lv3, z)
                 R.output(loss)
             return loss
-    
+
     After = relax.transform.SimpleAD(Before.get_global_var("main"))(Before)
 
     After.show()
-    
+
     args = []
     for arg in After["main_adjoint"].params[:-1]:
         shape = [int(l) for l in arg.shape]
         args.append(rand("float32", *shape))
-    
+
     z = np.random.rand(1, 10).astype(np.float32)
     z /= z.sum(axis=1, keepdims=True)
     args.append(tvm.nd.array(z))
 
     _, grad = execute_mod(After, "main_adjoint", *args)
-    
+
     def func(*inputs):
         loss = execute_mod(Before, "main", *[tvm.nd.array(i) for i in inputs])
         return loss.numpy()
@@ -470,7 +470,7 @@ def test_tuple2():
                 loss = relax.nn.softmax_cross_entropy(lv3, z)
                 R.output(loss)
             return loss
-    
+
     After = relax.transform.SimpleAD(Before.get_global_var("main"))(Before)
     After.show()
 
@@ -478,13 +478,13 @@ def test_tuple2():
     for arg in After["main_adjoint"].params[:-1]:
         shape = [int(l) for l in arg.shape]
         args.append(rand("float32", *shape))
-    
+
     z = np.random.rand(1, 10).astype(np.float32)
     z /= z.sum(axis=1, keepdims=True)
     args.append(tvm.nd.array(z))
 
     _, grad = execute_mod(After, "main_adjoint", *args)
-    
+
     def func(*inputs):
         loss = execute_mod(Before, "main", *[tvm.nd.array(i) for i in inputs])
         return loss.numpy()
@@ -514,25 +514,24 @@ def test_tuple3():
                 z9 = relax.sum(z8)
                 R.output(z9)
             return z9
-    
+
     Before.show()
     After = relax.transform.SimpleAD(Before.get_global_var("main"))(Before)
     # After.show()
-    
+
     x1 = rand("float32", *(10, 5))
     x2 = rand("float32", *(10, 5))
     y = rand("float32", *(10, 5))
     args_numpy = [x1.numpy(), x2.numpy(), y.numpy()]
 
     _, grad = execute_mod(After, "main_adjoint", x1, x2, y)
-    
+
     def func(*inputs):
         loss = execute_mod(Before, "main", *[tvm.nd.array(i) for i in inputs])
         return loss.numpy()
-    
+
     check_numerical_grads(func, args_numpy, [i.numpy() for i in grad])
 
 
 if __name__ == "__main__":
     pytest.main([__file__])
-    # test_binding_uses()
