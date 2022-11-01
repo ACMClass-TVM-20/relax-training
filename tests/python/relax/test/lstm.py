@@ -19,7 +19,7 @@ from utils import LowerToTensorIRPass
 
 np.random.seed(1)
 
-def build_lstm_mod(steps_num, in_size, out_size, hidden_size, batch_size=1):
+def build_lstm_mod(steps_num, in_size, hidden_size, out_size, batch_size=1):
     """
         inputs: x_t, y (label), C_init, H_init, Wh_{}, Wx_{}, B_{}, Wh_q, B_q
     """
@@ -31,8 +31,8 @@ def build_lstm_mod(steps_num, in_size, out_size, hidden_size, batch_size=1):
     y = relax.Var("y", [batch_size, out_size], dtype)
     inputs_list.append(y)
     
-    C = relax.Var("C_0", [batch_size, hidden_size], dtype)
-    H = relax.Var("H_0", [batch_size, hidden_size], dtype)
+    C = relax.Var("C", [batch_size, hidden_size], dtype)
+    H = relax.Var("H", [batch_size, hidden_size], dtype)
     inputs_list.append(C)
     inputs_list.append(H)
 
@@ -46,6 +46,8 @@ def build_lstm_mod(steps_num, in_size, out_size, hidden_size, batch_size=1):
     params["Wh_q"] = relax.Var("Wh_q", [hidden_size, out_size], dtype)
     params["B_q"] = relax.Var("B_q", [out_size], dtype)
     inputs_list += [params["Wh_q"], params["B_q"]]
+
+    assert x_list[0] == inputs_list[0]
     
     bb = relax.BlockBuilder()
     with bb.function("LSTM", inputs_list):
@@ -87,7 +89,7 @@ def build_lstm_mod(steps_num, in_size, out_size, hidden_size, batch_size=1):
                             relax.op.nn.matmul(H, params["Wh_o"]),
                             relax.op.nn.matmul(x_list[i], params["Wx_o"])
                         ),
-                        params["B_f"]
+                        params["B_o"]
                     )
                 ))
 
