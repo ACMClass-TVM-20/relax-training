@@ -27,6 +27,8 @@ namespace relax {
 RELAX_REGISTER_UNARY_OP("nn.relu");
 RELAX_REGISTER_UNARY_OP("nn.gradrelu_");
 RELAX_REGISTER_UNARY_OP("nn.softmax");
+RELAX_REGISTER_UNARY_OP("nn.sigmoid");
+RELAX_REGISTER_UNARY_OP("nn.tanh");
 
 RELAX_REGISTER_BINARY_OP_BASE("nn.dense", InferShapeDense, InferTypeDense);
 RELAX_REGISTER_BINARY_OP_BASE("nn.cross_entropy", InferShapeCrossEntropy, InferTypeCrossEntropy);
