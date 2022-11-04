@@ -36,7 +36,7 @@ def n_layer_perceptron(layers, in_size, out_size, hidden_size, batch_size=1):
         [rx.Var("b_" + str(layers - 1), [out_size], vec_type)]
     label_list = [rx.Var("y", [batch_size, out_size], mat_type)]
     args_list = input_list + w_list + b_list + label_list
-    
+
     bb = rx.BlockBuilder()
     with bb.function("MLP", args_list):
         with bb.dataflow():
@@ -153,7 +153,7 @@ for img, label in loader:
     output, *grads = vm["MLP"](*args)
     output, loss = output[0], output[1]
     pred_kind = np.argmax(output.numpy(), axis=1)
-    
+
     """
     print("label: ", label_nd)
     print("output:", output)
@@ -178,7 +178,7 @@ for img, label in loader:
     else:
         total += batch_size
         success += np.count_nonzero(pred_kind == label.numpy())
-    
+
 
 print("Prediction Rate On TestSet: ", success / total)
 print("time: ", time.perf_counter() - time0)

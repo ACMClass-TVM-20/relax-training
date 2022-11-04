@@ -79,58 +79,10 @@ class MultiLayerPerceptron:
             R.output(loss)
         return loss
 
-# @tvm.script.ir_module
-# class MultiLayerPerceptron:
-#     @R.function
-#     def main(x: Tensor((1, 20), "float32"),
-#                 w0: Tensor((20, 10), "float32"),
-#                 b0: Tensor((10,), "float32"),
-#                 label: Tensor((1, 10), "float32")):
-#         with R.dataflow():
-#             lv0 = relax.nn.matmul(x, w0)
-#             out = relax.add(lv0, b0)
-#             loss = relax.nn.softmax_cross_entropy(out, label)
-#             R.output(loss)
-#         return loss
-
 # MultiLayerPerceptron.show()
 
 # print(dump_ast(MultiLayerPerceptron["main"]))
 
-@tvm.script.ir_module
-class Expected:
-    @R.function
-    def main(x: Tensor((1, 20), "float32"),
-                w0: Tensor((20, 10), "float32"),
-                b0: Tensor((10,), "float32"),
-                label: Tensor((1, 10), "float32")):
-        with R.dataflow():
-            lv0 = relax.nn.matmul(x, w0)
-            out = relax.add(lv0, b0)
-            loss = relax.nn.softmax_cross_entropy(out, label)
-            R.output(loss)
-        return loss
-    @R.function
-    def main_adjoint(x: Tensor((1, 20), "float32"),
-                w0: Tensor((20, 10), "float32"),
-                b0: Tensor((10,), "float32"),
-                label: Tensor((1, 10), "float32")):
-        with R.dataflow():
-            lv0 = relax.nn.matmul(x, w0)
-            out = relax.add(lv0, b0)
-            loss = relax.nn.softmax_cross_entropy(out, label)
-            loss_adjoint = relax.ones_like(loss)
-            lv = relax.nn.softmax(out)
-            lv1 = relax.sub(lv, label)
-            out_adjoint = relax.multiply(loss_adjoint, lv1)
-            lv0_adjoint = relax.collapse_sum_like(out_adjoint, lv0)
-            lv2 = relax.transpose(x)
-            lv3 = relax.nn.matmul(lv2, lv0_adjoint)
-            w0_adjoint = relax.collapse_sum_like(lv3, w0)
-            b0_adjoint = relax.collapse_sum_like(out_adjoint, b0)
-            R.output(loss, w0_adjoint, b0_adjoint)
-        return (loss, (w0_adjoint, b0_adjoint))
-Expected.show()
 # @tvm.script.ir_module
 # class AutoDiffMLP:
 #     @R.function
@@ -193,7 +145,7 @@ TIRModule.show()
 
 # # # build and run
 ex = relax.vm.build(TIRModule, target="llvm")
-# vm = relax.VirtualMachine(ex, tvm.cpu())
+vm = relax.VirtualMachine(ex, tvm.cpu())
 
 """
     train
@@ -210,51 +162,51 @@ print("Test Predict: ", class_names[pred_kind[0]])
 print("True: ", class_names[label[0]])
 """
 
-# # success, total = 0, 0
-# lr = 0.03
+# success, total = 0, 0
+lr = 0.03
+batch_size = 64
+total_loss = 0
+epoch = 0
+gradient_dict = {}
+arg_names = ["w0", "b0", "w1", "b1"]
+for arg in arg_names:
+    gradient_dict[arg] = 0
+for img, label in loader:
+    nd_params = {k: tvm.nd.array(v) for k, v in mlp_params.items()}
+    data_nd = tvm.nd.array(img.reshape(1, 784))
+    label_nd = tvm.nd.array(np.array([[1 if i == label[0] else 0 for i in range(10)]]).astype(np.float32))
+    loss, res = vm["main_adjoint"](data_nd, nd_params["w0"], nd_params["b0"], nd_params["w1"], nd_params["b1"], label_nd)
+    w0_grad, b0_grad, w1_grad, b1_grad = res
+    # loss, (w0_grad, b0_grad, w1_grad, b1_grad) = vm["main_adjoint"](data_nd, nd_params["w0"], nd_params["b0"], nd_params["w1"], nd_params["b1"], label_nd)
+    # pred_kind = np.argmax(output[0].numpy(), axis=1)
+    # total += 1
+    # if pred_kind[0] == label[0]:
+    #     success += 1
 
-# batch_size = 64
-# total_loss = 0
-# epoch = 0
-# gradient_dict = {}
-# arg_names = ["w0", "b0", "w1", "b1"]
-# for arg in arg_names:
-#     gradient_dict[arg] = 0
+    # print("label: ", label_nd)
+    # print("output:", output[0])
+    # print("loss:", output[1])
+    # print("w0_grad", w0_grad)
+    # print("b0_grad", b0_grad)
+    # print("w1_grad", w1_grad)
+    # print("b1_grad", b1_grad)
+    # break
 
-# for img, label in loader:
-#     nd_params = {k: tvm.nd.array(v) for k, v in mlp_params.items()}
-#     data_nd = tvm.nd.array(img.reshape(1, 784))
-#     label_nd = tvm.nd.array(np.array([[1 if i == label[0] else 0 for i in range(10)]]).astype(np.float32))
-#     loss, (w0_grad, b0_grad, w1_grad, b1_grad) = vm["main_adjoint"](data_nd, nd_params["w0"], nd_params["b0"], nd_params["w1"], nd_params["b1"], label_nd)
-#     # pred_kind = np.argmax(output[0].numpy(), axis=1)
-#     # total += 1
-#     # if pred_kind[0] == label[0]:
-#     #     success += 1
+    epoch += 1
+    total_loss += loss.numpy()
+    gradient_dict["w0"] += w0_grad.numpy()
+    gradient_dict["b0"] += b0_grad.numpy()
+    gradient_dict["w1"] += w1_grad.numpy()
+    gradient_dict["b1"] += b1_grad.numpy()
 
-#     # print("label: ", label_nd)
-#     # print("output:", output[0])
-#     # print("loss:", output[1])
-#     # print("w0_grad", w0_grad)
-#     # print("b0_grad", b0_grad)
-#     # print("w1_grad", w1_grad)
-#     # print("b1_grad", b1_grad)
-#     # break
+    if epoch % batch_size == 0:
+        print("epoch={}, loss={}".format(epoch, total_loss))
 
-#     epoch += 1
-#     total_loss += loss.numpy()
-#     gradient_dict["w0"] += w0_grad.numpy()
-#     gradient_dict["b0"] += b0_grad.numpy()
-#     gradient_dict["w1"] += w1_grad.numpy()
-#     gradient_dict["b1"] += b1_grad.numpy()
+        for arg in gradient_dict:
+            mlp_params[arg] -= lr * (gradient_dict[arg] / batch_size)
+            gradient_dict[arg] = 0
 
-#     if epoch % batch_size == 0:
-#         print("epoch={}, loss={}".format(epoch, total_loss))
-
-#         for arg in gradient_dict:
-#             mlp_params[arg] -= lr * (gradient_dict[arg] / batch_size)
-#             gradient_dict[arg] = 0
-
-#         total_loss = 0
+        total_loss = 0
 
 
-# # print("Prediction Rate: ", float(success)/float(total))
+# print("Prediction Rate: ", float(success)/float(total))

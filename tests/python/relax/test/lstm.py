@@ -30,7 +30,7 @@ def build_lstm_mod(steps_num, in_size, hidden_size, out_size, batch_size=1):
     inputs_list += x_list
     y = relax.Var("y", [batch_size, out_size], dtype)
     inputs_list.append(y)
-    
+
     C = relax.Var("C", [batch_size, hidden_size], dtype)
     H = relax.Var("H", [batch_size, hidden_size], dtype)
     inputs_list.append(C)
@@ -48,7 +48,7 @@ def build_lstm_mod(steps_num, in_size, hidden_size, out_size, batch_size=1):
     inputs_list += [params["Wh_q"], params["B_q"]]
 
     assert x_list[0] == inputs_list[0]
-    
+
     bb = relax.BlockBuilder()
     with bb.function("LSTM", inputs_list):
         with bb.dataflow():

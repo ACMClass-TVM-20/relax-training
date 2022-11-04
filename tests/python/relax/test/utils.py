@@ -71,10 +71,10 @@ def map_softmax(bb, call):
     return bb.call_te(topi.nn.softmax, call.args[0])
 
 def te_cross_entropy(x, y):
-    # i = te.reduce_axis((0, 10), name="i")
-    # result = te.compute(shape=(), fcompute=lambda : te.sum(-y[0, i] * te.log(x[0, i]), axis=i), name="cross_entropy")
-    # return te.compute(shape=result.shape, fcompute=lambda *indices: te.if_then_else(te.isnan(result(*indices)), 0.0, result(*indices)), name="crossent_process")
-    return -topi.sum(topi.log(x) * y)
+    i = te.reduce_axis((0, 10), name="i")
+    result = te.compute(shape=(), fcompute=lambda : te.sum(-y[0, i] * te.log(x[0, i]), axis=i), name="cross_entropy")
+    return te.compute(shape=result.shape, fcompute=lambda *indices: te.if_then_else(te.isnan(result(*indices)), 0.0, result(*indices)), name="crossent_process")
+    # return -topi.sum(topi.log(x) * y)
 
 def map_cross_entropy(bb, call):
     return bb.call_te(te_cross_entropy, call.args[0], call.args[1])
@@ -140,7 +140,7 @@ op_map = {
   "relax.log": map_log,
   "relax.sum": map_sum,
   "relax.zeros": map_zeros,
-  "relax.ones": map_ones
+  "relax.ones": map_ones,
 }
 
 @tvm.ir.transform.module_pass(opt_level=0, name="LowerToTensorIR")
