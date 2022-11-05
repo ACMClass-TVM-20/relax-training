@@ -17,8 +17,8 @@
  * under the License.
  */
 
-#include "nn.h"
-#include "../tensor/binary.h"
+#include "training.h"
+#include "training_nn.h"
 
 namespace tvm {
 namespace relax {
