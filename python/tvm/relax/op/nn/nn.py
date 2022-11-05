@@ -50,6 +50,11 @@ def softmax_cross_entropy(lhs: Expr, rhs: Expr) -> Expr:
 def flatten(data: Expr) -> Expr:
     return _make.flatten(data)
 
+def sigmoid(data: Expr) -> Expr:
+    return _make.sigmoid(data)
+
+def tanh(data: Expr) -> Expr:
+    return _make.tanh(data)
 
 def max_pool2d(data: Expr, kernel_size, stride=None, padding=(0, 0), dilation=(1, 1)) -> Expr:
     if stride is None:
