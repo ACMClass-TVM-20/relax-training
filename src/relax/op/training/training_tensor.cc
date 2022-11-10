@@ -23,8 +23,8 @@
 namespace tvm {
 namespace relax {
 
-RELAX_REGISTER_UNARY_OP_BASE("zeros", InferShapeFull, InferTypeFull);
-RELAX_REGISTER_UNARY_OP_BASE("ones", InferShapeFull, InferTypeFull);
+RELAX_REGISTER_UNARY_OP_BASE("zeros", InferShapeOnesLike, InferTypeOnesLike);
+RELAX_REGISTER_UNARY_OP_BASE("ones", InferShapeOnesLike, InferTypeOnesLike);
 RELAX_REGISTER_UNARY_OP("log");
 RELAX_REGISTER_UNARY_OP("negative");
 RELAX_REGISTER_UNARY_OP("ones_like");

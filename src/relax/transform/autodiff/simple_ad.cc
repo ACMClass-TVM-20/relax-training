@@ -161,7 +161,7 @@ class SimpleADMutator : public ExprMutator {
     ret_type.push_back(TupleType(out_adjoints_type));
 
     return Function(node->params, SeqExpr({builder_->EndBlock()}, Tuple(out_expr)),
-                    TupleType(ret_type), Tuple(out_shape), node->attrs);
+                    TupleType(ret_type), /*Tuple(out_shape)*/ RuntimeDepShape(), node->attrs);
   }
 
   void VisitBinding_(const VarBindingNode* binding) override {

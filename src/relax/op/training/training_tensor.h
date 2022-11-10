@@ -39,6 +39,25 @@ Type InferTypeCollapseSumLike(const Call& call, DiagnosticContext diag_ctx) {
   return call->args[1]->checked_type();
 }
 
+Optional<Expr> InferShapeOnesLike(const Call& call, DiagnosticContext diag_ctx) {
+  if (call->args.size() != 1) {
+    diag_ctx.EmitFatal(Diagnostic::Error(call->span) << "ones-like op should have 1 arguments");
+  }
+  return call->args[0];
+}
+
+Type InferTypeOnesLike(const Call& call, DiagnosticContext diag_ctx) {
+  if (call->args.size() != 1) {
+    diag_ctx.EmitFatal(Diagnostic::Error(call->span) << "ones-like op should have 1 arguments");
+  }
+  Type type0 = call->args[0]->checked_type();
+  auto* t0 = type0.as<ShapeTypeNode>();
+  if (!t0) {
+    diag_ctx.EmitFatal(Diagnostic::Error(call->span) << "ones-like op should take a ShapeExpr");
+  }
+  return DynTensorType(call->args[0].as<ShapeExprNode>()->values.size(), DataType::Float(32));
+}
+
 }  // namespace relax
 }  // namespace tvm
 
