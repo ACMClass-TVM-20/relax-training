@@ -75,42 +75,36 @@ class SimpleADMutator : public ExprMutator {
   explicit SimpleADMutator(IRModule mod, const Array<Var>& require_grads)
       : ExprMutator(mod), require_grads(require_grads) {}
 
-  Expr VisitExpr_(const FunctionNode* node) override {
+  Function FuncTransform(const FunctionNode* node) {
     ICHECK(node->body->IsInstance<SeqExprNode>());
-    const SeqExprNode* seq_expr = node->body.as<SeqExprNode>();
+
+    Array<Var> new_params;
+    for (Var param : node->params) {
+      Var new_param = Var(param->vid, NullOpt, param->checked_type_, param->span);
+      UpdateShape(new_param, param->shape_);
+      this->var_remap_[param->vid] = new_param;
+      new_params.push_back(new_param);
+    }
+    Expr new_body = VisitWithNewScope(node->body);
+
+    const SeqExprNode* seq_expr = new_body.as<SeqExprNode>();
     // only a single dataflow block
     ICHECK(seq_expr->blocks.size() == 1);
     ICHECK(seq_expr->blocks[0]->IsInstance<DataflowBlockNode>());
     const DataflowBlockNode* block = seq_expr->blocks[0].as<DataflowBlockNode>();
 
     builder_->BeginDataflowBlock();
-    // copy and emit
     for (const auto& binding: block->bindings) {
-      if (const auto* node = binding.as<VarBindingNode>()) {
-        const VarBinding& var_binding = GetRef<VarBinding>(node);
-        if (var_binding->var->IsInstance<DataflowVarNode>()) {
-          builder_->Emit(var_binding);
-        }
-        else {
-          builder_->EmitOutput(var_binding);
-        }
-      }
-      else if (const auto* node = binding.as<MatchShapeNode>()) {
-        const MatchShape& match_shape = GetRef<MatchShape>(node);
-        builder_->EmitMatchShape(match_shape);
-      }
-      else {
-        LOG(FATAL) << "TypeError: Invalid type: " << binding->GetTypeKey();
-      }
+      VisitBinding(binding);
     }
 
     // create adjoint var for inputs
-    for (const auto& v: node->params) {
-      if (require_grads.empty() || CheckArrayContains(require_grads, v)) {
-        CreateAdjointVar(v, false);
+    for (int i = 0; i < new_params.size(); ++i) {
+      if (require_grads.empty() || CheckArrayContains(require_grads, node->params[i])) {
+        CreateAdjointVar(new_params[i], false);
       }
       else {
-        CreateAdjointVar(v, true);
+        CreateAdjointVar(new_params[i], true);
       }
     }
 
@@ -129,7 +123,7 @@ class SimpleADMutator : public ExprMutator {
     for (int i = block->bindings.size()-1; i >= 0; --i) {
       if (!block->bindings[i]->IsInstance<VarBindingNode>()) continue;
       const VarBindingNode* binding = block->bindings[i].as<VarBindingNode>();
-      VisitBinding_(binding);
+      ReverseVisit(binding);
     }
 
     // handle the return values and types
@@ -140,14 +134,14 @@ class SimpleADMutator : public ExprMutator {
     ret_type.push_back(node->ret_type);
 
     // emit the input adjoints
-    for (const auto& param: node->params) {
-      if (require_grads.empty() || CheckArrayContains(require_grads, param)) {
-        const Var& adjoint_var = adjoint_var_map[param];
-        if (adjoint_expr_map.count(param)) {
-          BindAndEmit(adjoint_var, adjoint_expr_map[param]);
+    for (int i = 0; i < new_params.size(); ++i) {
+      if (require_grads.empty() || CheckArrayContains(require_grads, node->params[i])) {
+        const Var& adjoint_var = adjoint_var_map[new_params[i]];
+        if (adjoint_expr_map.count(new_params[i])) {
+          BindAndEmit(adjoint_var, adjoint_expr_map[new_params[i]]);
         }
         else {
-          const Expr& default_adjoint = Call(default_op, {param->shape()});
+          const Expr& default_adjoint = Call(default_op, {new_params[i]->shape()});
           BindAndEmit(adjoint_var, default_adjoint);
         }
         out_adjoints.push_back(adjoint_var);
@@ -159,12 +153,13 @@ class SimpleADMutator : public ExprMutator {
     out_expr.push_back(Tuple(out_adjoints));
     out_shape.push_back(Tuple(out_adjoints_shape));
     ret_type.push_back(TupleType(out_adjoints_type));
+    Expr final_body = builder_->Normalize(SeqExpr({builder_->EndBlock()}, Tuple(out_expr)));
 
-    return Function(node->params, SeqExpr({builder_->EndBlock()}, Tuple(out_expr)),
+    return Function(new_params, final_body,
                     TupleType(ret_type), /*Tuple(out_shape)*/ RuntimeDepShape(), node->attrs);
   }
 
-  void VisitBinding_(const VarBindingNode* binding) override {
+  void ReverseVisit(const VarBindingNode* binding) {
     VLOG(2) << "[AD] Visit Binding: " << binding->var->name_hint() << std::endl;
     CreateAdjointVar(binding->var, true);
     const Var& adjoint_var = adjoint_var_map[binding->var];
@@ -214,10 +209,6 @@ class SimpleADMutator : public ExprMutator {
     else {
       LOG(FATAL) << "Unsupport: unknown binding expr" << binding->value;
     }
-
-    // SSA. release the space
-    adjoint_var_map.erase(binding->var);
-    adjoint_expr_map.erase(binding->var);
   }
 
  private:
@@ -442,7 +433,7 @@ IRModule SimpleAD(IRModule m, const GlobalVar &var, const Array<ObjectRef> &requ
     auto mutator = SimpleADMutator(new_module, require_grads_var);
 
     auto adjoint_var = GlobalVar(var->name_hint + "_adjoint");
-    Function f_after = Downcast<Function>(mutator.VisitExpr(f_before));
+    Function f_after = mutator.FuncTransform(f_before.as<FunctionNode>());
     f_after = WithAttr(f_after, tvm::attr::kGlobalSymbol, adjoint_var->name_hint);
     new_module->Add(adjoint_var, f_after);
 
