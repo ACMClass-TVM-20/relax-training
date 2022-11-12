@@ -304,7 +304,7 @@ def SimpleAD(func, require_grads = None) -> tvm.ir.transform.Pass:
     func: relax.GlobalVar
         The global variable (of the given module) to differentiate.
         The function should only return one scalar value.
-    require_grads: Union[List[relax.Var], List[int]]
+    require_grads: Optional[Union[relax.Var, List[relax.Var]]]
         The relax variables which need adjoints. Must be arguments of func.
         If the elements in require_grads are integers, integer i represent the i-th variable in the
         parameter list of func. The index is 0-based.

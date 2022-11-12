@@ -208,7 +208,7 @@ def test_default_require_grads():
                 R.output(lv6, x_adjoint, y_adjoint)
             return (lv6, relax.Tuple([x_adjoint, y_adjoint]))
 
-    After2 = relax.transform.SimpleAD(Before.get_global_var("main"), require_grads=[0, 1])(Before)
+    After2 = relax.transform.SimpleAD(Before.get_global_var("main"), require_grads=Before["main"].params[:2])(Before)
     assert_structural_equal(After2["main_adjoint"], Expected2["main_adjoint"])
 
 def test_mlp_script():
@@ -266,7 +266,7 @@ def test_mlp_script():
                 R.output(loss, w0_adjoint, b0_adjoint)
             return (loss, relax.Tuple((w0_adjoint, b0_adjoint)))
 
-    After = relax.transform.SimpleAD(Before.get_global_var("main"), require_grads=[1, 2])(Before)
+    After = relax.transform.SimpleAD(Before.get_global_var("main"), require_grads=Before["main"].params[1:3])(Before)
     assert_structural_equal(After["main_adjoint"], Expected["main_adjoint"])
     check_mod_grad_equal(Expected, After, "main_adjoint")
 
@@ -319,7 +319,7 @@ def test_batch_mlp_script():
                 R.output(loss, w0_adjoint, b0_adjoint)
             return (loss, relax.Tuple((w0_adjoint, b0_adjoint)))
 
-    After = relax.transform.SimpleAD(Before.get_global_var("main"), require_grads=[1, 2])(Before)
+    After = relax.transform.SimpleAD(Before.get_global_var("main"), require_grads=Before["main"].params[1:3])(Before)
     assert_structural_equal(After["main_adjoint"], Expected["main_adjoint"])
     check_mod_grad_equal(Expected, After, "main_adjoint")
 
@@ -406,8 +406,8 @@ def test_gradient_api():
                 R.output(loss, w0_adjoint, b0_adjoint)
             return (loss, relax.Tuple((w0_adjoint, b0_adjoint)))
 
-    after_func = relax.transform.gradient(Before["main"], require_grads=[1, 2])
-    after_func1 = relax.transform.gradient(Before.get_global_var("main"), require_grads=[1, 2],
+    after_func = relax.transform.gradient(Before["main"], require_grads=Before["main"].params[1:3])
+    after_func1 = relax.transform.gradient(Before.get_global_var("main"), Before["main"].params[1:3],
                                            mod=Before)
     assert_structural_equal(after_func, After["main_adjoint"])
     assert_structural_equal(after_func1, After["main_adjoint"])
@@ -636,9 +636,9 @@ def test_ad_error_cases():
     # no such function
     with pytest.raises(TVMError):
         relax.transform.SimpleAD(MultiBlocks.get_global_var("main"))(NormalModule)
-    # require_grads index error
+    # no such var
     with pytest.raises(TVMError):
-        relax.transform.SimpleAD(main_gv, require_grads=[1, 9])(NormalModule)
+        relax.transform.SimpleAD(main_gv, require_grads=MultiBlocks["main"].params[0])(NormalModule)
 
 
 if __name__ == "__main__":

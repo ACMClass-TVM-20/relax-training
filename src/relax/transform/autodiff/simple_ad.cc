@@ -100,7 +100,7 @@ class SimpleADMutator : public ExprMutator {
 
     // create adjoint var for inputs
     for (size_t i = 0; i < new_params.size(); ++i) {
-      if (require_grads.empty() || CheckArrayContains(require_grads, node->params[i])) {
+      if (require_grads.empty() || std::find(require_grads.begin(), require_grads.end(), node->params[i]) != require_grads.end()) {
         CreateAdjointVar(new_params[i], false);
       }
       else {
@@ -135,7 +135,7 @@ class SimpleADMutator : public ExprMutator {
 
     // emit the input adjoints
     for (size_t i = 0; i < new_params.size(); ++i) {
-      if (require_grads.empty() || CheckArrayContains(require_grads, node->params[i])) {
+      if (require_grads.empty() || std::find(require_grads.begin(), require_grads.end(), node->params[i]) != require_grads.end()) {
         const Var& adjoint_var = adjoint_var_map[new_params[i]];
         if (adjoint_expr_map.count(new_params[i])) {
           BindAndEmit(adjoint_var, adjoint_expr_map[new_params[i]]);
@@ -214,16 +214,6 @@ class SimpleADMutator : public ExprMutator {
   }
 
  private:
-  template<typename T>
-  static bool CheckArrayContains(const Array<T> array, T value) {
-    for (auto i : array) {
-      if (i == value) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   void CreateAdjointVar(const Var& v, bool is_dataflow_var) {
     // the adjoint var has been created
     if (adjoint_var_map.count(v)) return;
@@ -413,20 +403,15 @@ class SimpleADMutator : public ExprMutator {
  * \param require_grad_names The relax variables which need adjoints. Must be inputs.
  * \return The module after AD.
  */
-IRModule SimpleAD(IRModule m, const GlobalVar &var, const Array<ObjectRef> &require_grads) {
+IRModule SimpleAD(IRModule m, const GlobalVar &var, const Array<Var> &require_grads) {
   BaseFunc base_func = m->Lookup(var);
   if (auto* n = base_func.as<FunctionNode>()) {
     auto f_before = GetRef<Function>(n);
     Array<Var> require_grads_var;
-    for (auto input : require_grads) {
-      if (auto* n = input.as<IntImmNode>()) {
-        int64_t idx = GetRef<Integer>(n).IntValue();
-        require_grads_var.push_back(f_before->params[idx]);
-      } else if (auto *n = input.as<VarNode>()){
-        require_grads_var.push_back(GetRef<Var>(n));
-      } else {
-        LOG(FATAL) << "require_grads argument of the SimpleAD call has wrong type. should be int or relax.Var";
-      }
+    for (auto input: require_grads) {
+      ICHECK(std::find(n->params.begin(), n->params.end(), input) != n->params.end())
+      << "function " << var->name_hint << " has no var named " << input->name_hint();
+      require_grads_var.push_back(input);
     }
 
     IRModuleNode* new_module_node = m.CopyOnWrite();
@@ -447,7 +432,7 @@ IRModule SimpleAD(IRModule m, const GlobalVar &var, const Array<ObjectRef> &requ
 
 namespace transform {
 
-Pass SimpleAD(GlobalVar func, Array<ObjectRef> require_grads) {
+Pass SimpleAD(GlobalVar func, Array<Var> require_grads) {
   runtime::TypedPackedFunc<IRModule(IRModule, PassContext)> pass_func =
       [=](IRModule mod, PassContext pc) {
         return relax::SimpleAD(mod, func, require_grads);
