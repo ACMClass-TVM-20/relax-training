@@ -22,7 +22,7 @@
  * \brief A simple reverse-mode auto differentiation.
  *
  * Now only supports differentiating a function in the IRModule with one dataflow block
- * with respect to one of its output(s). The specified output needs to be scalar.
+ * with respect to the only return value of the function. It needs to be scalar.
  *
  * Example:
  *
@@ -99,7 +99,7 @@ class SimpleADMutator : public ExprMutator {
     }
 
     // create adjoint var for inputs
-    for (int i = 0; i < new_params.size(); ++i) {
+    for (size_t i = 0; i < new_params.size(); ++i) {
       if (require_grads.empty() || CheckArrayContains(require_grads, node->params[i])) {
         CreateAdjointVar(new_params[i], false);
       }
@@ -116,7 +116,7 @@ class SimpleADMutator : public ExprMutator {
       InitGrad(adjoint_var_map[target], target);
     }
     else {
-      LOG(FATAL) << "the body of the function (the default target) is not a relax.Var";
+      LOG(FATAL) << "the body of the function is not a relax.Var";
     }
 
     // reverse-mode ad
@@ -134,7 +134,7 @@ class SimpleADMutator : public ExprMutator {
     ret_type.push_back(node->ret_type);
 
     // emit the input adjoints
-    for (int i = 0; i < new_params.size(); ++i) {
+    for (size_t i = 0; i < new_params.size(); ++i) {
       if (require_grads.empty() || CheckArrayContains(require_grads, node->params[i])) {
         const Var& adjoint_var = adjoint_var_map[new_params[i]];
         if (adjoint_expr_map.count(new_params[i])) {
@@ -153,27 +153,29 @@ class SimpleADMutator : public ExprMutator {
     out_expr.push_back(Tuple(out_adjoints));
     out_shape.push_back(Tuple(out_adjoints_shape));
     ret_type.push_back(TupleType(out_adjoints_type));
+
+    Type new_ret_type = VisitType(TupleType(ret_type));
     Expr final_body = builder_->Normalize(SeqExpr({builder_->EndBlock()}, Tuple(out_expr)));
 
-    return Function(new_params, final_body,
-                    TupleType(ret_type), /*Tuple(out_shape)*/ RuntimeDepShape(), node->attrs);
+    return Function(new_params, final_body, new_ret_type, /*Tuple(out_shape)*/ RuntimeDepShape(), node->attrs);
   }
 
   void ReverseVisit(const VarBindingNode* binding) {
-    VLOG(2) << "[AD] Visit Binding: " << binding->var->name_hint() << std::endl;
+    VLOG(2) << "AD reverse visit binding: " << binding->var->name_hint() << std::endl;
+
     CreateAdjointVar(binding->var, true);
     const Var& adjoint_var = adjoint_var_map[binding->var];
 
     // must be ignored output's AST
     if (adjoint_expr_map.count(binding->var) == 0) {
-      VLOG(2) << "ignored: " << binding->var->name_hint() << std::endl;
+      VLOG(2) << "AD ignored binding var: " << binding->var->name_hint() << std::endl;
       return;
     }
 
     // meet a def
     BindAndEmit(adjoint_var, adjoint_expr_map[binding->var]);
     // back prop.
-    ICHECK(adjoint_expr_map.count(binding->var)) << "AD error: lhs has no adjoint" << std::endl;
+    ICHECK(adjoint_expr_map.count(binding->var)) << "reverse visit terminated: missing adjoint of binding var: " << binding->var->name_hint() << std::endl;
 
     // case 1: tuple
     // a = ((c, d),)
@@ -207,7 +209,7 @@ class SimpleADMutator : public ExprMutator {
       }
     }
     else {
-      LOG(FATAL) << "Unsupport: unknown binding expr" << binding->value;
+      LOG(FATAL) << "AD does not support this type of binding value now: " << binding->value;
     }
   }
 
@@ -221,7 +223,6 @@ class SimpleADMutator : public ExprMutator {
     }
     return false;
   }
-
 
   void CreateAdjointVar(const Var& v, bool is_dataflow_var) {
     // the adjoint var has been created
@@ -261,7 +262,7 @@ class SimpleADMutator : public ExprMutator {
         }
       }
       else {
-        LOG(FATAL) << "Type not match: base and increment should be both tuple" << std::endl;
+        LOG(FATAL) << "base and increment should be both tuple" << std::endl;
       }
     }
     else if (const auto* node = base.as<TupleGetItemNode>()) {
@@ -424,7 +425,7 @@ IRModule SimpleAD(IRModule m, const GlobalVar &var, const Array<ObjectRef> &requ
       } else if (auto *n = input.as<VarNode>()){
         require_grads_var.push_back(GetRef<Var>(n));
       } else {
-        LOG(FATAL) << "require_grads argument of the SimpleAD call has wrong type";
+        LOG(FATAL) << "require_grads argument of the SimpleAD call has wrong type. should be int or relax.Var";
       }
     }
 
@@ -439,7 +440,7 @@ IRModule SimpleAD(IRModule m, const GlobalVar &var, const Array<ObjectRef> &requ
 
     return new_module;
   } else {
-    LOG(FATAL) << "Relax function " << var->name_hint << " not found";
+    LOG(FATAL) << "relax function " << var->name_hint << " not found";
     return m;
   }
 }

@@ -28,6 +28,7 @@ from tvm.relay.testing import rand
 from tvm.testing import assert_allclose
 from tvm.testing.utils import check_numerical_grads
 from tvm.script._parser import ir as I, relax as R, tir as T
+from tvm._ffi.base import TVMError
 
 import _gradient
 from utils import LowerToTensorIRPass
@@ -516,7 +517,7 @@ def test_tuple3():
                 R.output(z9)
             return z9
 
-    Before.show()
+    # Before.show()
     After = relax.transform.SimpleAD(Before.get_global_var("main"))(Before)
     # After.show()
 
@@ -532,6 +533,112 @@ def test_tuple3():
         return loss.numpy()
 
     check_numerical_grads(func, args_numpy, [i.numpy() for i in grad])
+
+
+def test_params_copy():
+    @I.ir_module
+    class Before:
+        @R.function
+        def main(x0: R.Tensor((5, 5), "float32"),
+                 x1: R.Tensor((5, 5), "float32"),
+                 x2: R.Tensor((5, 5), "float32"),
+                 x3: R.Tensor((5, 5), "float32")):
+            with R.dataflow():
+                lv0 = R.add(x0, x1)
+                lv1 = R.add(x2, x3)
+                lv2 = R.add(lv0, lv1)
+                out = R.sum(lv2)
+                R.output(out)
+            return out
+
+    After = relax.transform.SimpleAD(Before.get_global_var("main"))(Before)
+    assert len(Before["main"].params) == len(After["main"].params)
+    assert len(Before["main"].params) == len(After["main_adjoint"].params)
+    for i in range(len(After["main"].params)):
+        assert Before["main"].params[i] == After["main"].params[i]
+        assert Before["main"].params[i] != After["main_adjoint"].params[i]
+
+
+def test_function_copy():
+    @I.ir_module
+    class Before:
+        @R.function
+        def main(x0: R.Tensor((5, 5), "float32"),
+                 x1: R.Tensor((5, 5), "float32"),
+                 x2: R.Tensor((5, 5), "float32"),
+                 x3: R.Tensor((5, 5), "float32")):
+            with R.dataflow():
+                lv0 = R.add(x0, x1)
+                lv1 = R.add(x2, x3)
+                lv2 = R.add(lv0, lv1)
+                out = R.sum(lv2)
+                R.output(out)
+            return out
+
+    After = relax.transform.SimpleAD(Before.get_global_var("main"))(Before)
+    inputs = [rand("float32", 5, 5) for _ in range(4)]
+    out1 = execute_mod(Before, "main", *inputs)
+    out2, _ = execute_mod(After, "main_adjoint", *inputs)
+    assert(out1.numpy() == out2.numpy())
+
+
+def test_ad_error_cases():
+    def _perform_transform(module):
+        relax.transform.SimpleAD(module.get_global_var("main"))(module)
+
+    @I.ir_module
+    class TargetNotScalar:
+        @R.function
+        def main(x0: R.Tensor((5, 5), "float32"),
+                 x1: R.Tensor((5, 5), "float32")):
+            with R.dataflow():
+                out = R.add(x0, x1)
+                R.output(out)
+            return out
+    with pytest.raises(TVMError):
+        _perform_transform(TargetNotScalar)
+
+    @I.ir_module
+    class NoDataflow:
+        @R.function
+        def main(x0: R.Tensor((5, 5), "float32")):
+            out = R.sum(x0)
+            return out
+    with pytest.raises(TVMError):
+        _perform_transform(NoDataflow)
+
+    @I.ir_module
+    class MultiBlocks:
+        @R.function
+        def main(x0: R.Tensor((5, 5), "float32"),
+                 x1: R.Tensor((5, 5), "float32")):
+            with R.dataflow():
+                out = R.add(x0, x1)
+                R.output(out)
+            with R.dataflow():
+                out1 = R.sum(x0)
+                R.output(out1)
+            return out1
+    with pytest.raises(TVMError):
+        _perform_transform(MultiBlocks)
+
+    @I.ir_module
+    class NormalModule:
+        @R.function
+        def main(x0: R.Tensor((5, 5), "float32"),
+                x1: R.Tensor((5, 5), "float32")):
+            with R.dataflow():
+                out = R.sum(x0)
+                R.output(out)
+            return out
+
+    main_gv = NormalModule.get_global_var("main")
+    # no such function
+    with pytest.raises(TVMError):
+        relax.transform.SimpleAD(MultiBlocks.get_global_var("main"))(NormalModule)
+    # require_grads index error
+    with pytest.raises(TVMError):
+        relax.transform.SimpleAD(main_gv, require_grads=[1, 9])(NormalModule)
 
 
 if __name__ == "__main__":
