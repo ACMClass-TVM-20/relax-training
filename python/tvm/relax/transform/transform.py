@@ -295,6 +295,13 @@ def MetaScheduleApplyDatabase() -> tvm.ir.transform.Pass:
     return _ffi_api.MetaScheduleApplyDatabase()
 
 
+def AppendCall(func, op, out, args) -> tvm.ir.transform.Pass:
+    if not isinstance(args, list):
+        args = [args]
+
+    return _ffi_api.AppendCall(func, op, out, args)
+
+
 def SimpleAD(func, require_grads = None) -> tvm.ir.transform.Pass:
     """Automatically differentiate the given function in the IRModule, and add the generated
     function to the IRModule, with name [name of func] + "_adjoint".
