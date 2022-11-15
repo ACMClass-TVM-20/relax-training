@@ -75,7 +75,7 @@ class AppendCallMutator : public ExprMutator {
     builder_->EmitOutput(VarBinding(out, Call(op, args_expr)));
     Expr final_body = builder_->Normalize(VisitWithNewScope(SeqExpr({builder_->EndBlock()}, out)));
 
-    return Function(new_params, final_body, out->checked_type_, /*out->shape()*/ RuntimeDepShape(), node->attrs);
+    return Function(new_params, final_body, out->checked_type_, out->shape(), node->attrs);
   }
 
  private:
