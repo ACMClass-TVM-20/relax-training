@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=wildcard-import, redefined-builtin
-"""Relax optimizer. """
 
 from .optimizer import *
+from .legalizer_update import *
+from .trainer import *

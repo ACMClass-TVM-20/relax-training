@@ -1,3 +1,20 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 from __future__ import annotations
 
 import numpy as np
@@ -7,15 +24,27 @@ import tvm.ir
 from tvm import relax
 from tvm import relax as rx
 from tvm.runtime.container import ADT, tuple_object
-from tvm.relax.op import add, sub, multiply
-
+from tvm.relax.op import add, subtract, multiply
 
 class Optimizer:
+    """Relax optimizer. """
+
     def __init__(self, param_list: list[relax.Var]) -> None:
         self.param_list = param_list
-        self.state = None
+        self._state = None
 
-    def get_function() -> relax.Function:
+    def set_params(self, params):
+        if self.param_list is None:
+            self.param_list = params
+        else:
+            assert isinstance(self.param_list, list)
+            self.param_list += params
+
+    @property
+    def state(self):
+        return self._state
+
+    def get_function(self) -> relax.Function:
         """Use blockbuilder to build a new function.
 
         Returns
@@ -61,10 +90,15 @@ class SGD(Optimizer):
         super().__init__(param_list)
         self.lr = lr
         self.weight_decay = weight_decay
-        self.state = tuple_object((
-            # num_steps = 0
-            tvm.nd.array(np.zeros(()).astype(np.float32)),
-        ))
+
+    @property
+    def state(self):
+        if self._state is None:
+            self._state = tuple_object((
+                # num_steps = 0
+                tvm.nd.array(np.zeros(()).astype(np.float32)),
+            ))
+        return self._state
 
     def get_function(self) -> relax.Function:
         var_len = len(self.param_list)
@@ -105,7 +139,7 @@ class SGD(Optimizer):
                 for i in range(len(self.param_list)):
                     p, g = param_var_list[i], grad_var_list[i]
                     dp = bb.emit(add(multiply(weight_decay, p), g)) if self.weight_decay else g
-                    p = bb.emit(sub(p, multiply(lr, dp)))
+                    p = bb.emit(subtract(p, multiply(lr, dp)))
                     param_var_list[i] = p
 
                 # handle return values
@@ -124,12 +158,18 @@ class MomentumSGD(Optimizer):
         self.weight_decay = weight_decay
         self.dampening = 0
         self.nesterov = nesterov
-        self.state = tuple_object((
-            # num_steps = 0
-            tvm.nd.array(np.zeros(()).astype(np.float32)),
-            # v_{param} is initialized to all zeros
-            *(tvm.nd.array(np.zeros(_get_var_shape_list(p)).astype(np.float32)) for p in param_list)
-        ))
+
+    @property
+    def state(self):
+        if self._state is None:
+            self._state = tuple_object((
+                # num_steps = 0
+                tvm.nd.array(np.zeros(()).astype(np.float32)),
+                # v_{param} is initialized to all zeros
+                *(tvm.nd.array(np.zeros(_get_var_shape_list(p)).astype(np.float32)) for p in self.param_list)
+            ))
+        return self._state
+
     def get_function(self) -> relax.Function:
         var_len = len(self.param_list)
 
@@ -187,7 +227,7 @@ class MomentumSGD(Optimizer):
                     ddp = multiply(dampening_inv, dp) if self.dampening else dp
                     v = bb.emit(add(multiply(momentum, v), ddp))
                     g_new = bb.emit(add(dp, multiply(momentum, v))) if self.nesterov else v
-                    p = bb.emit(sub(p, multiply(lr, g_new)))
+                    p = bb.emit(subtract(p, multiply(lr, g_new)))
                     param_var_list[i] = p
                     state_var_list[i + 1] = v
 
@@ -197,6 +237,7 @@ class MomentumSGD(Optimizer):
                 gv0, gv1 = bb.emit_output(param_var_tuple), bb.emit_output(state_var_tuple)
             bb.emit_func_output((gv0, gv1))
         return bb.get()["MomentumSGD"]
+
 
 class Adam(Optimizer):
     def __init__(self, param_list, lr, beta1, beta2, eps, normalize: bool):
