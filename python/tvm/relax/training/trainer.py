@@ -21,7 +21,7 @@ from tvm.ir.module import IRModule
 from tvm.ir.op import Op
 from typing import Union
 import numpy as np
-import math
+import copy
 
 from tvm.runtime.container import tuple_object
 from tvm.relax.transform import OperatorLegalizer
@@ -36,7 +36,7 @@ class Trainer:
         backbone: IRModule,
         func_name: str,
         partial_optimizer,
-        dtype = relax.DynTensorType(dtype="float32")) -> None:
+        dtype="float32") -> None:
         # should be config after
         self._parameters_indices = None
         self._loss_op = None
@@ -73,7 +73,7 @@ class Trainer:
         if isinstance(loss_op, str):
             loss_op = Op.get(loss_op)
         self._loss_op = loss_op
-        self._loss_arg = relax.Var("label", label_shape, self.dtype)
+        self._loss_arg = relax.Var("label", label_shape, relax.DynTensorType(dtype=self.dtype))
 
     def set_vm_config(self, target, device = tvm.cpu(), memory_cfg = None):
         """Specify the following vm config: target, device, memory_cfg"""
@@ -84,7 +84,7 @@ class Trainer:
                * Perfrom the follwing pass by order: AppendCall, SimpleAD, Lower.
                * Allocate buffers for parameters.
         """
-        loss = relax.Var("loss", [], self.dtype)
+        loss = relax.Var("loss", [], relax.DynTensorType(dtype=self.dtype))
 
         # Pass 1.
         try:
@@ -118,18 +118,20 @@ class Trainer:
             return [int(dim) for dim in tvm_shape]
 
         param_list = []
+        self._parameters_buffer = []
         for i in range(len(self.mod[self.train_func_name].params)):
             if i in self._parameters_indices:
                 param = self.mod[self.train_func_name].params[i]
                 param_list.append(param)
                 self._parameters_buffer.append(
-                    tvm.nd.array(np.zeros(shape=_convert_from_tvm_shape(param.shape), dtype=self.dtype))
+                    tvm.nd.array(np.zeros(shape=_convert_from_tvm_shape(param.shape), dtype=np.dtype(self.dtype)))
                 )
                 self._parameters_name_to_pos[param.name_hint] = len(self._parameters_buffer) - 1
 
         # Build Optimizer
-        self._optimizer.param_list = param_list
-        self.mod[self._optimizer.__class__.__name__] = self._optimizer.get_function()
+        optimizer = copy.copy(self._optimizer)
+        optimizer.set_params(param_list)
+        self.mod[optimizer.__class__.__name__] = optimizer.get_function()
 
         # Pass 3.
         legalizer = OperatorLegalizer(self.mod)

@@ -30,15 +30,15 @@ class Optimizer:
     """Relax optimizer. """
 
     def __init__(self, param_list: list[relax.Var]) -> None:
-        self.param_list = param_list
+        self._param_list = param_list
         self._state = None
 
     def set_params(self, params):
-        if self.param_list is None:
-            self.param_list = params
+        if self._param_list is None:
+            self._param_list = params
         else:
-            assert isinstance(self.param_list, list)
-            self.param_list += params
+            assert isinstance(self._param_list, list)
+            self._param_list += params
 
     @property
     def state(self):
@@ -101,13 +101,13 @@ class SGD(Optimizer):
         return self._state
 
     def get_function(self) -> relax.Function:
-        var_len = len(self.param_list)
+        var_len = len(self._param_list)
 
         # input variables
-        param_var = relax.Var("params", rx.Tuple([p.shape for p in self.param_list]),
-            rx.TupleType([p.checked_type for p in self.param_list]))
-        grad_var = relax.Var("gradients", rx.Tuple([p.shape for p in self.param_list]),
-            rx.TupleType([p.checked_type for p in self.param_list]))
+        param_var = relax.Var("params", rx.Tuple([p.shape for p in self._param_list]),
+            rx.TupleType([p.checked_type for p in self._param_list]))
+        grad_var = relax.Var("gradients", rx.Tuple([p.shape for p in self._param_list]),
+            rx.TupleType([p.checked_type for p in self._param_list]))
         state_var = relax.Var("optim_states", rx.Tuple([relax.ShapeExpr([])]),
             rx.TupleType([rx.DynTensorType(0, "float32")]))
 
@@ -120,12 +120,12 @@ class SGD(Optimizer):
             with bb.dataflow():
                 # get variables in tuples
                 param_var_list = [
-                    bb.emit_var_binding(relax.VarBinding(_copy_var(self.param_list[i]),
+                    bb.emit_var_binding(relax.VarBinding(_copy_var(self._param_list[i]),
                                                          relax.TupleGetItem(param_var, i)))
                     for i in range(var_len)
                 ]
                 grad_var_list = [
-                    bb.emit_var_binding(relax.VarBinding(_copy_var(self.param_list[i], "_adjoint"),
+                    bb.emit_var_binding(relax.VarBinding(_copy_var(self._param_list[i], "_adjoint"),
                                                          relax.TupleGetItem(grad_var, i)))
                     for i in range(var_len)
                 ]
@@ -136,7 +136,7 @@ class SGD(Optimizer):
                 ]
 
                 state_var_list[0] = bb.emit(add(state_var_list[0], one))
-                for i in range(len(self.param_list)):
+                for i in range(len(self._param_list)):
                     p, g = param_var_list[i], grad_var_list[i]
                     dp = bb.emit(add(multiply(weight_decay, p), g)) if self.weight_decay else g
                     p = bb.emit(subtract(p, multiply(lr, dp)))
@@ -166,21 +166,21 @@ class MomentumSGD(Optimizer):
                 # num_steps = 0
                 tvm.nd.array(np.zeros(()).astype(np.float32)),
                 # v_{param} is initialized to all zeros
-                *(tvm.nd.array(np.zeros(_get_var_shape_list(p)).astype(np.float32)) for p in self.param_list)
+                *(tvm.nd.array(np.zeros(_get_var_shape_list(p)).astype(np.float32)) for p in self._param_list)
             ))
         return self._state
 
     def get_function(self) -> relax.Function:
-        var_len = len(self.param_list)
+        var_len = len(self._param_list)
 
         # input variables
-        param_var = relax.Var("params", rx.Tuple([p.shape for p in self.param_list]),
-            rx.TupleType([p.checked_type for p in self.param_list]))
-        grad_var = relax.Var("gradients", rx.Tuple([p.shape for p in self.param_list]),
-            rx.TupleType([p.checked_type for p in self.param_list]))
+        param_var = relax.Var("params", rx.Tuple([p.shape for p in self._param_list]),
+            rx.TupleType([p.checked_type for p in self._param_list]))
+        grad_var = relax.Var("gradients", rx.Tuple([p.shape for p in self._param_list]),
+            rx.TupleType([p.checked_type for p in self._param_list]))
         state_var = relax.Var("optim_states",
-            rx.Tuple([relax.ShapeExpr([])] + [p.shape for p in self.param_list]),
-            rx.TupleType([rx.DynTensorType(0, "float32")] + [p.checked_type for p in self.param_list]))
+            rx.Tuple([relax.ShapeExpr([])] + [p.shape for p in self._param_list]),
+            rx.TupleType([rx.DynTensorType(0, "float32")] + [p.checked_type for p in self._param_list]))
 
         lr, momentum, weight_decay, dampening_inv, one = \
             _float2constant(self.lr, self.momentum, self.weight_decay, 1 - self.dampening, 1)
@@ -190,12 +190,12 @@ class MomentumSGD(Optimizer):
             with bb.dataflow():
                 # get variables in tuples
                 param_var_list = [
-                    bb.emit_var_binding(relax.VarBinding(_copy_var(self.param_list[i]),
+                    bb.emit_var_binding(relax.VarBinding(_copy_var(self._param_list[i]),
                                                          relax.TupleGetItem(param_var, i)))
                     for i in range(var_len)
                 ]
                 grad_var_list = [
-                    bb.emit_var_binding(relax.VarBinding(_copy_var(self.param_list[i], "_adjoint"),
+                    bb.emit_var_binding(relax.VarBinding(_copy_var(self._param_list[i], "_adjoint"),
                                                          relax.TupleGetItem(grad_var, i)))
                     for i in range(var_len)
                 ]
@@ -203,7 +203,7 @@ class MomentumSGD(Optimizer):
                 state_var_list = \
                     [bb.emit_var_binding(relax.VarBinding(num_steps_var,
                                                           relax.TupleGetItem(state_var, 0)))] + \
-                    [bb.emit_var_binding(relax.VarBinding(_copy_var(self.param_list[i], "_velocity"),
+                    [bb.emit_var_binding(relax.VarBinding(_copy_var(self._param_list[i], "_velocity"),
                                          relax.TupleGetItem(state_var, i + 1)))
                      for i in range(var_len)]
 
@@ -221,7 +221,7 @@ class MomentumSGD(Optimizer):
                 #
                 # The above logic is optimized using ifs to reduce the number of operations.
                 state_var_list[0] = bb.emit(add(state_var_list[0], one))
-                for i in range(len(self.param_list)):
+                for i in range(len(self._param_list)):
                     p, g, v = param_var_list[i], grad_var_list[i], state_var_list[i + 1]
                     dp = bb.emit(add(multiply(weight_decay, p), g)) if self.weight_decay else g
                     ddp = multiply(dampening_inv, dp) if self.dampening else dp
