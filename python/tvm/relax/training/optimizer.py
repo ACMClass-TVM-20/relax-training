@@ -25,48 +25,101 @@ from tvm import relax
 from tvm import relax as rx
 from tvm.runtime.container import ADT, tuple_object
 from tvm.relax.op import add, subtract, multiply
+from typing import Callable, Dict, List, Optional, Union
+
 
 class Optimizer:
-    """Relax optimizer. """
+    """Relax training optimizer.
 
-    def __init__(self, param_list: list[relax.Var]) -> None:
-        self._param_list = param_list
+    Examples
+    --------
+    This is an example that uses SGD to optimize parameters.
+
+    .. code-block:: python
+        optimizer = Optimizer(None)
+        params, gradient = None, None
+        func = None
+        params, optimizer.args = func(params, gradient, optimizer.args)
+    """
+
+    def __init__(self, params: Union[relax.Var, list[relax.Var]]) -> None:
+        """Default initializer for relax.training.Optimizer.
+
+        Parameters
+        ----------
+        params: Union[relax.Var, list[relax.Var]]
+            The parameter or the list of parameters to optimize.
+
+            If params is None, it indicates params will be added later using add_params.
+        """
+        if params is None:
+            params = []
+        elif not isinstance(params, list):
+            params = [params]
+        if not all(isinstance(x, relax.Var) for x in params):
+            raise ValueError("Not all elements in argument params is relax.Var")
+        self._param_list = params
         self._state = None
 
-    def set_params(self, params):
-        if self._param_list is None:
-            self._param_list = params
-        else:
-            assert isinstance(self._param_list, list)
-            self._param_list += params
+    def add_params(self, params: Union[relax.Var, list[relax.Var]]):
+        """Add one parameter or a list of new parameters.
+
+        Parameters
+        ----------
+        params: Union[relax.Var, list[relax.Var]]
+            The parameter or the list of parameters to optimize.
+        """
+        if not isinstance(params, list):
+            params = [params]
+        if not all(isinstance(x, relax.Var) for x in params):
+            raise ValueError("Not all elements in argument params is relax.Var")
+        self._param_list += params
 
     @property
     def state(self):
+        """Return the state of the optimizer. This should be used the last argument of the function
+        that `get_function()` returns, and updated by the last return value of that function.
+
+        Here state is a property because self._state is constructed when its first used. Before that,
+        you can freely add parameters using `add_params()`.
+
+        See also `relax.training.Optimizer`.
+        """
         return self._state
 
+    @state.setter
+    def state(self, value):
+        self._state = value
+
     def get_function(self) -> relax.Function:
-        """Use blockbuilder to build a new function.
+        """Use blockbuilder to build a new function that executes parameter and optimizer state update.
 
         Returns
         -------
         func: relax.Function
 
-        def main_adjoint():
-            return ...
-        def func(params: Tuple(Tensor, ...), gradients: Tuple(Tensor, ...), optimizer_args)
-            # optimizer_args:
-            # Tuple(lr, num_steps) for SGD
-            # Tuple(lr, num_steps, v_list: Tuple, s_list: Tuple, ) adam
-            return new_params, new_optimizer_args
+        Examples
+        --------
+        This is an example for the returned relax function.
+
+        .. code-block:: python
+            # You could assume adjoint function be like:
+            # See also `relax.transform.SimpleAD`.
+            @R.function
+            def main_adjoint(arg1: R.Tensor((1, 10), "float32"), arg2: R.Tensor((1, 10), "float32")):
+                # some calculation...
+                return (loss, (arg1_adjoint, arg2_adjoint))
+
+            # The returned function should be like:
+            @R.function
+            def optimizer(params: R.Tuple(R.Tensor((1, 10), "float32"), R.Tensor((1, 10), "float32")),
+                          gradients: R.Tuple(R.Tensor((1, 10), "float32"), R.Tensor((1, 10), "float32")),
+                          optimizer_args):
+                # some calculation...
+                return (new_params, new_optimizer_args)
         """
         raise NotImplementedError()
 
-# usage
-# optimizer = Optimizer(None)
-# params, gradient = None, None
-# func = None
-# params, optimizer.args = func(params, gradient, optimizer.args)
-# todo: lr schedule
 
 def _get_var_shape_list(var):
     """
@@ -75,8 +128,10 @@ def _get_var_shape_list(var):
     """
     return [int(val) for val in var.shape]
 
+
 def _float2constant(*f_list):
     return [relax.Constant(tvm.nd.array(np.array(f).astype(np.float32))) for f in f_list]
+
 
 def _copy_var(var, name_suffix="", is_dataflow=True):
     if is_dataflow:
@@ -135,6 +190,7 @@ class SGD(Optimizer):
                                                          relax.TupleGetItem(state_var, 0)))
                 ]
 
+                # computation logic
                 state_var_list[0] = bb.emit(add(state_var_list[0], one))
                 for i in range(len(self._param_list)):
                     p, g = param_var_list[i], grad_var_list[i]
@@ -207,7 +263,7 @@ class MomentumSGD(Optimizer):
                                          relax.TupleGetItem(state_var, i + 1)))
                      for i in range(var_len)]
 
-                # main logic:
+                # computation logic:
                 # num_steps = state_var_list[0]
                 # num_steps += 1
                 # for p, g, v in zip(param_var_list, grad_var_list, state_var_list[1:]):
@@ -218,8 +274,6 @@ class MomentumSGD(Optimizer):
                 #     else:
                 #         p = p - v * lr
                 #     update p, v in var lists
-                #
-                # The above logic is optimized using ifs to reduce the number of operations.
                 state_var_list[0] = bb.emit(add(state_var_list[0], one))
                 for i in range(len(self._param_list)):
                     p, g, v = param_var_list[i], grad_var_list[i], state_var_list[i + 1]

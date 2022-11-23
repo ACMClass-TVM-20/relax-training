@@ -295,14 +295,9 @@ def MetaScheduleApplyDatabase() -> tvm.ir.transform.Pass:
     return _ffi_api.MetaScheduleApplyDatabase()
 
 
-def AppendCall(func, op, out, args) -> tvm.ir.transform.Pass:
-    if not isinstance(args, list):
-        args = [args]
-
-    return _ffi_api.AppendCall(func, op, out, args)
-
-
-def SimpleAD(func, require_grads = None) -> tvm.ir.transform.Pass:
+def SimpleAD(func, require_grads = None):
+# def SimpleAD(func: relax.GlobalVar,
+#              require_grads: Optional[Union[relax.Var, List[relax.Var]]] = None) -> tvm.ir.transform.Pass:
     """Automatically differentiate the given function in the IRModule, and add the generated
     function to the IRModule, with name [name of func] + "_adjoint".
 
@@ -331,6 +326,9 @@ def SimpleAD(func, require_grads = None) -> tvm.ir.transform.Pass:
 
 
 def gradient(func, require_grads = None, mod = None):
+# def gradient(func: Union[relax.Function, relax.GlobalVar],
+            #  require_grads: Optional[Union[relax.Var, List[relax.Var]]] = None,
+            #  mod: Optional[IRModule] = None) -> relax.Function:
     """Functional interface of SimpleAD. Takes a relax function as input, and returns the
     differentiated function.
 
@@ -340,7 +338,7 @@ def gradient(func, require_grads = None, mod = None):
         The function or global var to differentiate.
         The function should only return one scalar value.
         If func is an instance of relax.GlobalVar, mod must be given.
-    require_grads: Union[list[relax.Var], list[int]]
+    require_grads: Optional[Union[relax.Var, List[relax.Var]]]
         The relax variables which need adjoints. Must be arguments of func.
         If the elements in require_grads are integers, integer i represent the i-th variable in the
         parameter list of func. The index is 0-based.
@@ -355,8 +353,10 @@ def gradient(func, require_grads = None, mod = None):
     """
     if isinstance(func, relax.GlobalVar):
         if mod is None:
-            raise ValueError("please provide the IRModule of GlobalVar")
+            raise ValueError("please provide the IRModule containing GlobalVar argument func")
         func = mod[func]
+        if func is None:
+            raise ValueError("please provide the IRModule containing GlobalVar argument func")
 
     func_module = IRModule.from_expr(func)
     return SimpleAD(func_module.get_global_var("main"), require_grads)(func_module)["main_adjoint"]

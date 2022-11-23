@@ -18,4 +18,5 @@
 
 from .optimizer import *
 from .legalizer_update import *
-from .trainer import *
+
+from . import gradient

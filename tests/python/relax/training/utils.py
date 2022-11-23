@@ -7,7 +7,7 @@ from tvm import topi, relax, te
 from tvm.script import tir as T
 from tvm.script import relax as R
 
-import _gradient
+import tvm.relax.training.gradient
 
 
 @relax.expr_functor.mutator
