@@ -70,24 +70,6 @@ def test_append_call():
     # due to the return shape issue, this can not pass
 
 
-def test_optimizer():
-    param = relax.Var("test_param", (3, 3), relax.DynTensorType(dtype="float32"))
-    sgd = SGD([param], 0.01)
-    momsgd = MomentumSGD([param], 0.01, 0.9, 0.1, 0.001, True)
-
-    def get_new_param_shape(opt):
-        return opt.get_function().body.body.fields[0].shape.fields[0]
-
-    def assert_shape_equal(shape1, shape2):
-        assert np.array_equal(np.array(shape1), np.array(shape2))
-
-    sgd_shape = get_new_param_shape(sgd)
-    momsgd_shape = get_new_param_shape(momsgd)
-
-    assert_shape_equal(param.shape, sgd_shape)
-    assert_shape_equal(param.shape, momsgd_shape)
-
-
 def test_trainer():
     @I.ir_module
     class MLP:
