@@ -20,13 +20,14 @@ from tvm import relax
 from tvm.ir.module import IRModule
 from tvm.ir.op import Op
 from typing import Union
+
 import numpy as np
-import copy
+import math
 
 from tvm.runtime.container import tuple_object
-from tvm.relax.transform import OperatorLegalizer
+from tvm.relax.transform.op_legalizer import OperatorLegalizer
 
-from ._gradient import *
+from .gradient import *
 
 class Trainer:
     """simple wrapper for relax training."""
@@ -129,9 +130,9 @@ class Trainer:
                 self._parameters_name_to_pos[param.name_hint] = len(self._parameters_buffer) - 1
 
         # Build Optimizer
-        optimizer = copy.copy(self._optimizer)
-        optimizer.set_params(param_list)
-        self.mod[optimizer.__class__.__name__] = optimizer.get_function()
+        self._optimizer.set_params(param_list)
+        self._optimizer.state = None
+        self.mod[self._optimizer.__class__.__name__] = self._optimizer.get_function()
 
         # Pass 3.
         legalizer = OperatorLegalizer(self.mod)
@@ -181,7 +182,7 @@ class Trainer:
         loss, grads = self._vm[self.train_func_name](*self._prepare_inputs(self.train_func_name, inputs))
         assert len(grads) == len(self._parameters_buffer)
         tvm_params = []
-        new_params, self._optimizer._state = self._vm[self._optimizer.__class__.__name__](
+        new_params, self._optimizer.state = self._vm[self._optimizer.__class__.__name__](
             tuple_object(self._parameters_buffer), grads, self._optimizer.state
         )
         assert len(new_params) == len(self._parameters_buffer)
