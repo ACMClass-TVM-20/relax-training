@@ -30,21 +30,51 @@ from tvm.relax.transform.op_legalizer import OperatorLegalizer
 from .gradient import *
 
 class Trainer:
-    """simple wrapper for relax training."""
+    """Simple wrapper for relax training.
 
-    def __init__(
-        self,
-        backbone: IRModule,
-        func_name: str,
-        partial_optimizer,
-        dtype="float32") -> None:
+    Examples
+    --------
+    Initialize it first, do some settings and then train.
+
+    .. code-block:: python
+        trainer = Trainer(backbone=MLP, func_name="main", parameters_indices=range(1, 5))
+        trainer.prepare("relax.nn.softmax_cross_entropy", SGD(None, 0.01))
+        trainer.set_vm_config(target="llvm", device=tvm.cpu())
+        trainer.setup()
+        trainer.rand_init_params()
+        trainer.train(epoch=10, loader=loader, data_hook=_hook, show_detail=True)
+    """
+
+    def __init__(self, backbone: IRModule, func_name: str, parameters_indices, dtype="float32") -> None:
+        """Default initializer for relax.training.Optimizer.
+
+        Parameters
+        ----------
+        backbone: IRModule
+            Backbone of the training module. It should be a relax module with a function
+            whose name is `func_name`.
+
+        func_name: str
+            The name of the target function. The function should return the output of the module.
+
+        parameters_indices:
+            The indices of parameters in the input list of the target function.
+
+        dtype: str
+            The dtype of all data here. For simplicity, we suppose all data uses the same dtype. It should be
+            a string which can be used to initialize both numpy dtype and relax DynTensorType.
+            By default it is float32.
+        """
+
         # should be config after
-        self._parameters_indices = None
+        if isinstance(parameters_indices, int):
+            parameters_indices = [parameters_indices]
+        self._parameters_indices = list(parameters_indices)
         self._loss_op = None
         self._loss_arg = None
         self._vm_config = {}
 
-        self._optimizer = partial_optimizer
+        self._optimizer = None
         self._backbone = backbone
 
         self._parameters_buffer = []
@@ -56,25 +86,26 @@ class Trainer:
         self.mod = None
         self.dtype = dtype
 
-    def add_parameters(self, indices):
-        if self._parameters_indices is None:
-            self._parameters_indices = []
-        if isinstance(indices, int):
-            indices = [indices]
-        self._parameters_indices += list(indices)
-
-    def set_parameters(self, indices):
-        """Specify parameters by their indices in the train_func
-        """
-        self._parameters_indices = list(indices)
-
-    def set_loss(self, loss_op: Union[str, Op], label_shape):
+    def prepare(self, loss_op: Union[str, Op], optimizer):
         """Specify an op and label shape. Label type will be dtype.
+
+        Parameters
+        ----------
+        loss_op:
+            The op of loss. Loss will be calculated using this binary operator, with two arguments be
+            out of the backbone and a label. They must be of the same shape.
+
+        optimizer:
+            Specify the optimizer. It should be a 'partial initialized' optimizer with the argument
+            param_list be None. You do not need to specify param_list here because the trainer will automatically
+            config it.
         """
         if isinstance(loss_op, str):
             loss_op = Op.get(loss_op)
         self._loss_op = loss_op
-        self._loss_arg = relax.Var("label", label_shape, relax.DynTensorType(dtype=self.dtype))
+        self._loss_arg = relax.Var("label", self._backbone[self.func_name].body.body.shape, relax.DynTensorType(dtype=self.dtype))
+
+        self._optimizer = optimizer
 
     def set_vm_config(self, target, device = tvm.cpu(), memory_cfg = None):
         """Specify the following vm config: target, device, memory_cfg"""
@@ -83,16 +114,18 @@ class Trainer:
     def setup(self):
         """Setup the trainer.
                * Perfrom the follwing pass by order: AppendCall, SimpleAD, Lower.
+               * Add Optimizer.
                * Allocate buffers for parameters.
         """
         loss = relax.Var("loss", [], relax.DynTensorType(dtype=self.dtype))
 
-        # Pass 1.
         try:
             assert self._loss_op is not None
             assert self._loss_arg is not None
+            assert self._optimizer is not None
         except AssertionError:
-            raise Exception("Trainer Error: Please set loss first before you setup")
+            raise Exception("Trainer Error: Please call 'prepare' first before you setup")
+
         append_call_mod = relax.transform.AppendCall(
             func=self._backbone.get_global_var(self.func_name),
             op=self._loss_op,
@@ -102,11 +135,6 @@ class Trainer:
         loss_func_name = self.func_name + "1"
 
         # Pass 2.
-        try:
-            assert self._parameters_indices is not None
-        except AssertionError:
-            raise Exception("Trainer Error: Please set parameters first before you setup")
-
         require_grads = [append_call_mod[loss_func_name].params[index] for index in self._parameters_indices]
         self.mod = relax.transform.SimpleAD(
             func=append_call_mod.get_global_var(loss_func_name),
@@ -170,13 +198,13 @@ class Trainer:
         return to_vm
 
     def forward(self, *inputs):
-        """Forward. Return output.
+        """Forward. Return output in numpy.
         """
         self._check_setup()
         return self._vm[self.func_name](*self._prepare_inputs(self.func_name, inputs)).numpy()
 
     def backward(self, *inputs):
-        """Backward. Return loss.
+        """Backward. Return loss in numpy.
         """
         self._check_setup()
         loss, grads = self._vm[self.train_func_name](*self._prepare_inputs(self.train_func_name, inputs))
@@ -189,7 +217,26 @@ class Trainer:
         self._parameters_buffer = new_params
         return loss.numpy()
 
-    def train(self, epoch, loader, data_hook = lambda x: x, show_detail = False):
+    def train(self, epoch: int, loader, data_hook = lambda x: x, show_detail = False):
+        """A simple wrapper for the training loop.
+
+        Parameters
+        ----------
+        epoch: int
+            The number of the training epochs.
+
+        loader:
+            The data loader. It should be a iterable object with the input data returned every iteration.
+
+        data_hook:
+            A hook function which takes the return value of the loader iteration as input, and return things
+            that you want to feed to the module.
+            It is used to preprocess the input data. By default it is an identity function.
+
+        show_detail: boolean
+            Whether to show some information about training.
+        """
+        self._check_setup()
         for i in range(epoch):
             loss_buffer = []
             for dataline in loader:
@@ -199,11 +246,18 @@ class Trainer:
                 print(f"Train Epoch #{i}, Loss = {np.mean(loss_buffer)}")
 
     def rand_init_params(self):
+        """Randomly initialize parameters using np.random.uniform.
+        """
+        self._check_setup()
         self._parameters_buffer = [
             tvm.nd.array(math.sqrt(6.0 / np.sum(v.shape)) * np.random.uniform(-1.0, 1.0, v.shape).astype(np.float32)) \
                 for v in self._parameters_buffer
         ]
 
     def load_params(self, extern_param_dict: dict):
+        """Load parameters from a dict.
+        The key of the dict should be the same with the parameter name in backbone.
+        """
+        self._check_setup()
         for key in extern_param_dict:
             self._parameters_buffer[self._parameters_name_to_pos[key]] = tvm.nd.array(extern_param_dict[key])

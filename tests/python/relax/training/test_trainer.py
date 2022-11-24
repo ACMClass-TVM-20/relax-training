@@ -108,18 +108,15 @@ def test_trainer():
             return np.random.uniform(5, 10, (1, 784)).astype(np.float32), \
                 np.array([[1 if i == label else 0 for i in range(10)]]).astype(np.float32)
 
-    trainer = Trainer(backbone=MLP,
-        func_name="main",
-        partial_optimizer=SGD(None, 0.01)
-    )
-    trainer.set_parameters(range(1, 5))
-    trainer.set_loss("relax.nn.softmax_cross_entropy", label_shape=(1, 10))
+    trainer = Trainer(MLP, "main", range(1, 5))
+    trainer.prepare("relax.nn.softmax_cross_entropy", SGD(None, 0.01))
     trainer.set_vm_config(target="llvm", device=tvm.cpu())
     trainer.setup()
     # trainer.mod.show()
     trainer.train(epoch=1, loader=Loader(), show_detail=True)
 
     # test re-setup
+    trainer.prepare("relax.nn.softmax_cross_entropy", MomentumSGD(None, 0.001, 0.9, 0.1, 0.001, True))
     trainer.setup()
     # trainer.mod.show()
     trainer.train(epoch=1, loader=Loader(), show_detail=True)
