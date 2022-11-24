@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import numpy as np
+
 import tvm
 from tvm.ir.module import IRModule
 from tvm.relax.block_builder import BlockBuilder

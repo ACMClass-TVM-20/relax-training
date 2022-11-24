@@ -28,12 +28,13 @@ from tvm.relax.training import SGD, MomentumSGD
 from tvm.relay.testing import rand
 from tvm.testing import assert_allclose
 from tvm.runtime.container import tuple_object
+from tvm.relax.transform import OperatorLegalizer
 
-from utils import LowerToTensorIRPass
+import tvm.relax.training.legalizer_update
 
 
 def _execute_mod(mod, func_name, *args):
-    lowered_mod = LowerToTensorIRPass()(mod)
+    lowered_mod = OperatorLegalizer(mod).transform()
     ex = relax.vm.build(lowered_mod, target="llvm")
     vm = relax.VirtualMachine(ex, tvm.cpu())
     return vm[func_name](*args)
@@ -62,11 +63,11 @@ def test_shape():
     y = relax.Var("y", (2,), relax.DynTensorType(dtype="float32"))
     sgd1 = SGD(x, 0.01)
     sgd2 = SGD([x, y], 0.01)
-    momsgd = MomentumSGD([x, y], 0.01, 0.9, 0.1, 0.001, True)
+    msgd = MomentumSGD([x, y], 0.01, 0.9, 0.1, 0.001, True)
 
     _check_optimizer_shape(sgd1, [x])
     _check_optimizer_shape(sgd2, [x, y])
-    _check_optimizer_shape(momsgd, [x, y])
+    _check_optimizer_shape(msgd, [x, y])
 
 
 def test_sgd_numeric():
@@ -76,12 +77,46 @@ def test_sgd_numeric():
 
     x_np = np.random.rand(3, 3).astype(np.float32)
     x_ad_np = np.random.rand(3, 3).astype(np.float32)
+
     param = tuple_object([tvm.nd.array(x_np)])
     grad = tuple_object([tvm.nd.array(x_ad_np)])
-    new_param = _execute_mod(mod, "SGD", param, grad, sgd.state)[0][0]
-    new_param_np = x_np - 0.01 * x_ad_np - 0.02 * x_np
-    assert_allclose(new_param.numpy(), new_param_np)
+    new_param, sgd.state = _execute_mod(mod, "SGD", param, grad, sgd.state)
 
-test_sgd_numeric()
-# if __name__ == "__main__":
-    # pytest.main([__file__])
+    new_param_np = x_np - 0.01 * (x_ad_np + 0.02 * x_np)
+    assert_allclose(new_param[0].numpy(), new_param_np)
+
+
+def test_momentum_sgd_numeric():
+    lr, mom, damp, wd, nest = 0.01, 0.9, 0.85, 0.02, False
+
+    x = relax.Var("x", (3, 3), relax.DynTensorType(dtype="float32"))
+    msgd = MomentumSGD(x, lr, mom, damp, wd, nest)
+    mod = IRModule.from_expr(msgd.get_function())
+    mod.show()
+
+    x_np = np.random.rand(3, 3).astype(np.float32)
+    x_ad_np = np.random.rand(3, 3).astype(np.float32)
+
+    param = tuple_object([tvm.nd.array(x_np)])
+    grad = tuple_object([tvm.nd.array(x_ad_np)])
+    for _ in range(3):
+        param, msgd.state = _execute_mod(mod, "MomentumSGD", param, grad, msgd.state)
+
+    # numpy implementation
+    b = np.zeros(x_np.shape).astype(np.float32)
+    for _ in range(3):
+        g = x_ad_np
+        if wd:
+            g = g + wd * x_np
+        if mom:
+            b = mom * b + (1 - damp) * g
+            if nest:
+                g = g + mom * b
+            else:
+                g = b
+        x_np -= lr * g
+
+    assert_allclose(param[0].numpy(), x_np)
+
+if __name__ == "__main__":
+    pytest.main([__file__])

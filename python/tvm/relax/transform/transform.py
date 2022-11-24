@@ -23,9 +23,11 @@ from typing import Callable, Dict, List, Optional, Union
 
 import numpy as np
 import tvm.ir
+import tvm.relax.training.gradient
 from tvm import relax, IRModule
 
 from . import _ffi_api
+from ..expr import Var, GlobalVar, Function
 
 
 @tvm._ffi.register_object("relax.FunctionPass")
@@ -295,9 +297,8 @@ def MetaScheduleApplyDatabase() -> tvm.ir.transform.Pass:
     return _ffi_api.MetaScheduleApplyDatabase()
 
 
-def SimpleAD(func, require_grads = None):
-# def SimpleAD(func: relax.GlobalVar,
-#              require_grads: Optional[Union[relax.Var, List[relax.Var]]] = None) -> tvm.ir.transform.Pass:
+def SimpleAD(func: GlobalVar,
+             require_grads: Optional[Union[Var, List[Var]]] = None) -> tvm.ir.transform.Pass:
     """Automatically differentiate the given function in the IRModule, and add the generated
     function to the IRModule, with name [name of func] + "_adjoint".
 
@@ -325,10 +326,9 @@ def SimpleAD(func, require_grads = None):
     return _ffi_api.SimpleAD(func, require_grads)
 
 
-def gradient(func, require_grads = None, mod = None):
-# def gradient(func: Union[relax.Function, relax.GlobalVar],
-            #  require_grads: Optional[Union[relax.Var, List[relax.Var]]] = None,
-            #  mod: Optional[IRModule] = None) -> relax.Function:
+def gradient(func: Union[Function, GlobalVar],
+             require_grads: Optional[Union[Var, List[Var]]] = None,
+             mod: Optional[IRModule] = None) -> Function:
     """Functional interface of SimpleAD. Takes a relax function as input, and returns the
     differentiated function.
 

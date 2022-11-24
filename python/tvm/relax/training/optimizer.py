@@ -89,6 +89,11 @@ class Optimizer:
 
     @state.setter
     def state(self, value):
+        """Setter of state.
+
+        Setter of state must be defined in any optimizer inheriting the Optimizer class to ensure
+        the state can be updated.
+        """
         self._state = value
 
     def get_function(self) -> relax.Function:
@@ -155,6 +160,10 @@ class SGD(Optimizer):
             ))
         return self._state
 
+    @state.setter
+    def state(self, value):
+        self._state = value
+
     def get_function(self) -> relax.Function:
         var_len = len(self._param_list)
 
@@ -212,7 +221,7 @@ class MomentumSGD(Optimizer):
         self.lr = lr
         self.momentum = momentum
         self.weight_decay = weight_decay
-        self.dampening = 0
+        self.dampening = dampening
         self.nesterov = nesterov
 
     @property
@@ -225,6 +234,10 @@ class MomentumSGD(Optimizer):
                 *(tvm.nd.array(np.zeros(_get_var_shape_list(p)).astype(np.float32)) for p in self._param_list)
             ))
         return self._state
+
+    @state.setter
+    def state(self, value):
+        self._state = value
 
     def get_function(self) -> relax.Function:
         var_len = len(self._param_list)

@@ -30,27 +30,24 @@ from tvm.script._parser import ir as I, relax as R, tir as T
 from tvm._ffi.base import TVMError
 from tvm.relax.transform import OperatorLegalizer
 
-# import tvm.relax.training.gradient
-# import tvm.relax.training.legalizer_update
+import tvm.relax.training.legalizer_update
 
 
-from utils import LowerToTensorIRPass
-
-
-def execute_mod(mod, func_name, *args):
-    lowered_mod = LowerToTensorIRPass()(mod)
+def _execute_mod(mod, func_name, *args):
+    # lowered_mod = LowerToTensorIRPass()(mod)
+    lowered_mod = OperatorLegalizer(mod).transform()
     ex = relax.vm.build(lowered_mod, target="llvm")
     vm = relax.VirtualMachine(ex, tvm.cpu())
     return vm[func_name](*args)
 
 
-def check_mod_grad_equal(mod1, mod2, func_name):
+def _check_mod_grad_equal(mod1, mod2, func_name):
     args = []
     for arg in mod1[func_name].params:
         shape = [int(l) for l in arg.shape]
         args.append(rand("float32", *shape))
-    res1, grad1 = execute_mod(mod1, func_name, *args)
-    res2, grad2 = execute_mod(mod2, func_name, *args)
+    res1, grad1 = _execute_mod(mod1, func_name, *args)
+    res2, grad2 = _execute_mod(mod2, func_name, *args)
 
     if isinstance(res1, tvm.runtime.container.ADT):
         for (l, r) in zip(res1, res2):
@@ -91,7 +88,7 @@ def test_binding_uses():
     After = relax.transform.SimpleAD(Before.get_global_var("main"))(Before)
 
     args = [rand("float32", 5, 5), rand("float32", 5), rand("float32", 5), rand("float32", 5)]
-    output, grads = execute_mod(After, "main_adjoint", *args)
+    output, grads = _execute_mod(After, "main_adjoint", *args)
     assert_allclose(output.numpy(), np.sum(2 * args[0].numpy() + 2 * args[1].numpy()), atol=1e-4)
     expected_grads_nd = [2 * np.ones_like(args[0].numpy()),
                          10 * np.ones_like(args[1].numpy()),
@@ -268,7 +265,7 @@ def test_batch_mlp_script():
 
     After = relax.transform.SimpleAD(Before.get_global_var("main"), require_grads=Before["main"].params[1:3])(Before)
     assert_structural_equal(After["main_adjoint"], Expected["main_adjoint"])
-    check_mod_grad_equal(Expected, After, "main_adjoint")
+    _check_mod_grad_equal(Expected, After, "main_adjoint")
 
 
 def test_mlp_blockbuilder():
@@ -308,10 +305,10 @@ def test_mlp_blockbuilder():
     label /= label.sum(axis=1, keepdims=True)
     args.append(tvm.nd.array(label))
 
-    _, grad = execute_mod(After, "MLP_adjoint", *args)
+    _, grad = _execute_mod(After, "MLP_adjoint", *args)
 
     def func(*inputs):
-        loss = execute_mod(Before, "MLP", *[tvm.nd.array(i) for i in inputs])
+        loss = _execute_mod(Before, "MLP", *[tvm.nd.array(i) for i in inputs])
         return loss.numpy()
     check_numerical_grads(func, [i.numpy() for i in args], [i.numpy() for i in grad])
 
@@ -391,10 +388,10 @@ def test_tuple1():
     z /= z.sum(axis=1, keepdims=True)
     args.append(tvm.nd.array(z))
 
-    _, grad = execute_mod(After, "main_adjoint", *args)
+    _, grad = _execute_mod(After, "main_adjoint", *args)
 
     def func(*inputs):
-        loss = execute_mod(Before, "main", *[tvm.nd.array(i) for i in inputs])
+        loss = _execute_mod(Before, "main", *[tvm.nd.array(i) for i in inputs])
         return loss.numpy()
 
     check_numerical_grads(func, [i.numpy() for i in args], [i.numpy() for i in grad])
@@ -431,10 +428,10 @@ def test_tuple2():
     z /= z.sum(axis=1, keepdims=True)
     args.append(tvm.nd.array(z))
 
-    _, grad = execute_mod(After, "main_adjoint", *args)
+    _, grad = _execute_mod(After, "main_adjoint", *args)
 
     def func(*inputs):
-        loss = execute_mod(Before, "main", *[tvm.nd.array(i) for i in inputs])
+        loss = _execute_mod(Before, "main", *[tvm.nd.array(i) for i in inputs])
         return loss.numpy()
 
     check_numerical_grads(func, [i.numpy() for i in args], [i.numpy() for i in grad])
@@ -470,10 +467,10 @@ def test_tuple3():
     y = rand("float32", *(10, 5))
     args_numpy = [x1.numpy(), x2.numpy(), y.numpy()]
 
-    _, grad = execute_mod(After, "main_adjoint", x1, x2, y)
+    _, grad = _execute_mod(After, "main_adjoint", x1, x2, y)
 
     def func(*inputs):
-        loss = execute_mod(Before, "main", *[tvm.nd.array(i) for i in inputs])
+        loss = _execute_mod(Before, "main", *[tvm.nd.array(i) for i in inputs])
         return loss.numpy()
 
     check_numerical_grads(func, args_numpy, [i.numpy() for i in grad])
@@ -521,8 +518,8 @@ def test_function_copy():
 
     After = relax.transform.SimpleAD(Before.get_global_var("main"))(Before)
     inputs = [rand("float32", 5, 5) for _ in range(4)]
-    out1 = execute_mod(Before, "main", *inputs)
-    out2, _ = execute_mod(After, "main_adjoint", *inputs)
+    out1 = _execute_mod(Before, "main", *inputs)
+    out2, _ = _execute_mod(After, "main_adjoint", *inputs)
     assert rx.analysis.well_formed(After)
     assert(out1.numpy() == out2.numpy())
 
