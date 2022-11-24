@@ -379,7 +379,7 @@ class OperatorLegalizer(PyExprMutator):
             if not isinstance(func, Function):
                 continue
             updated_func = self.visit_expr(func)
-            updated_func = remove_all_unused(updated_func)
+            # updated_func = remove_all_unused(updated_func)
             self.builder_.update_func(global_var, updated_func)
 
         return self.builder_.get()
