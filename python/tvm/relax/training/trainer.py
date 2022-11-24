@@ -109,7 +109,11 @@ class Trainer:
 
     def set_vm_config(self, target, device = tvm.cpu(), memory_cfg = None):
         """Specify the following vm config: target, device, memory_cfg"""
-        self._vm_config = locals()
+        self._vm_config = {
+            "target": target,
+            "device": device,
+            "memory_cfg": memory_cfg
+        }
 
     def setup(self):
         """Setup the trainer.
@@ -209,7 +213,6 @@ class Trainer:
         self._check_setup()
         loss, grads = self._vm[self.train_func_name](*self._prepare_inputs(self.train_func_name, inputs))
         assert len(grads) == len(self._parameters_buffer)
-        tvm_params = []
         new_params, self._optimizer.state = self._vm[self._optimizer.__class__.__name__](
             tuple_object(self._parameters_buffer), grads, self._optimizer.state
         )
