@@ -24,29 +24,30 @@ from tvm import relax
 from tvm import relax as rx
 from tvm.ir.base import assert_structural_equal
 from tvm.relay.testing import rand
-# from tvm.script import relax as R
 from tvm.testing import assert_allclose
 from tvm.testing.utils import check_numerical_grads
 from tvm.script._parser import ir as I, relax as R, tir as T
 from tvm._ffi.base import TVMError
+from tvm.relax.transform import OperatorLegalizer
 
-import _gradient
-from utils import LowerToTensorIRPass
+import tvm.relax.training.legalizer_update
 
 
-def execute_mod(mod, func_name, *args):
-    lowered_mod = LowerToTensorIRPass()(mod)
+def _execute_mod(mod, func_name, *args):
+    # lowered_mod = LowerToTensorIRPass()(mod)
+    lowered_mod = OperatorLegalizer(mod).transform()
     ex = relax.vm.build(lowered_mod, target="llvm")
     vm = relax.VirtualMachine(ex, tvm.cpu())
     return vm[func_name](*args)
 
-def check_mod_grad_equal(mod1, mod2, func_name):
+
+def _check_mod_grad_equal(mod1, mod2, func_name):
     args = []
     for arg in mod1[func_name].params:
         shape = [int(l) for l in arg.shape]
         args.append(rand("float32", *shape))
-    res1, grad1 = execute_mod(mod1, func_name, *args)
-    res2, grad2 = execute_mod(mod2, func_name, *args)
+    res1, grad1 = _execute_mod(mod1, func_name, *args)
+    res2, grad2 = _execute_mod(mod2, func_name, *args)
 
     if isinstance(res1, tvm.runtime.container.ADT):
         for (l, r) in zip(res1, res2):
@@ -59,6 +60,7 @@ def check_mod_grad_equal(mod1, mod2, func_name):
             assert_allclose(l.numpy(), r.numpy())
     else:
         assert_allclose(grad1.numpy(), grad2.numpy())
+
 
 def test_binding_uses():
     # This case tests:
@@ -84,10 +86,9 @@ def test_binding_uses():
                 R.output(lv7)
             return lv7
     After = relax.transform.SimpleAD(Before.get_global_var("main"))(Before)
-    # After.show()
 
     args = [rand("float32", 5, 5), rand("float32", 5), rand("float32", 5), rand("float32", 5)]
-    output, grads = execute_mod(After, "main_adjoint", *args)
+    output, grads = _execute_mod(After, "main_adjoint", *args)
     assert_allclose(output.numpy(), np.sum(2 * args[0].numpy() + 2 * args[1].numpy()), atol=1e-4)
     expected_grads_nd = [2 * np.ones_like(args[0].numpy()),
                          10 * np.ones_like(args[1].numpy()),
@@ -96,6 +97,7 @@ def test_binding_uses():
 
     for i, j in zip(grads, expected_grads_nd):
         assert_allclose(i.numpy(), j)
+
 
 def test_default_require_grads():
     @I.ir_module
@@ -211,64 +213,6 @@ def test_default_require_grads():
     After2 = relax.transform.SimpleAD(Before.get_global_var("main"), require_grads=Before["main"].params[:2])(Before)
     assert_structural_equal(After2["main_adjoint"], Expected2["main_adjoint"])
 
-def test_mlp_script():
-    @I.ir_module
-    class Before:
-        @R.function
-        # this input shall be:
-        #     x: R.Tensor((20,), "float32"),
-        #     w0: R.Tensor((20, 10), "float32"),
-        #     b0: R.Tensor((10,), "float32"),
-        #     label: R.Tensor((10,), "float32")
-        # but we cannot do so due to the current restriction of matmul shape inference
-        def main(x: R.Tensor((1, 20), "float32"),
-                 w0: R.Tensor((20, 10), "float32"),
-                 b0: R.Tensor((10,), "float32"),
-                 label: R.Tensor((1, 10), "float32")):
-            with R.dataflow():
-                lv0 = R.matmul(x, w0)
-                out = R.add(lv0, b0)
-                loss = R.softmax_cross_entropy(out, label)
-                R.output(loss)
-            return loss
-
-    @I.ir_module
-    class Expected:
-        @R.function
-        def main(x: R.Tensor((1, 20), "float32"),
-                 w0: R.Tensor((20, 10), "float32"),
-                 b0: R.Tensor((10,), "float32"),
-                 label: R.Tensor((1, 10), "float32")):
-            with R.dataflow():
-                lv0 = R.matmul(x, w0)
-                out = R.add(lv0, b0)
-                loss = R.softmax_cross_entropy(out, label)
-                R.output(loss)
-            return loss
-        @R.function
-        def main_adjoint(x: R.Tensor((1, 20), "float32"),
-                 w0: R.Tensor((20, 10), "float32"),
-                 b0: R.Tensor((10,), "float32"),
-                 label: R.Tensor((1, 10), "float32")):
-            with R.dataflow():
-                lv0 = R.matmul(x, w0)
-                out = R.add(lv0, b0)
-                loss = R.softmax_cross_entropy(out, label)
-                loss_adjoint = R.ones_like(loss)
-                lv = R.softmax(out)
-                lv1 = R.subtract(lv, label)
-                out_adjoint = R.multiply(loss_adjoint, lv1)
-                lv0_adjoint = R.collapse_sum_like(out_adjoint, lv0)
-                lv2 = R.transpose(x)
-                lv3 = R.matmul(lv2, lv0_adjoint)
-                w0_adjoint = R.collapse_sum_like(lv3, w0)
-                b0_adjoint = R.collapse_sum_like(out_adjoint, b0)
-                R.output(loss, w0_adjoint, b0_adjoint)
-            return (loss, relax.Tuple((w0_adjoint, b0_adjoint)))
-
-    After = relax.transform.SimpleAD(Before.get_global_var("main"), require_grads=Before["main"].params[1:3])(Before)
-    assert_structural_equal(After["main_adjoint"], Expected["main_adjoint"])
-    check_mod_grad_equal(Expected, After, "main_adjoint")
 
 def test_batch_mlp_script():
     @I.ir_module
@@ -321,7 +265,8 @@ def test_batch_mlp_script():
 
     After = relax.transform.SimpleAD(Before.get_global_var("main"), require_grads=Before["main"].params[1:3])(Before)
     assert_structural_equal(After["main_adjoint"], Expected["main_adjoint"])
-    check_mod_grad_equal(Expected, After, "main_adjoint")
+    _check_mod_grad_equal(Expected, After, "main_adjoint")
+
 
 def test_mlp_blockbuilder():
     layers, in_size, out_size, hidden_size, batch_size = 3, 5, 5, 5, 4
@@ -360,10 +305,10 @@ def test_mlp_blockbuilder():
     label /= label.sum(axis=1, keepdims=True)
     args.append(tvm.nd.array(label))
 
-    _, grad = execute_mod(After, "MLP_adjoint", *args)
+    _, grad = _execute_mod(After, "MLP_adjoint", *args)
 
     def func(*inputs):
-        loss = execute_mod(Before, "MLP", *[tvm.nd.array(i) for i in inputs])
+        loss = _execute_mod(Before, "MLP", *[tvm.nd.array(i) for i in inputs])
         return loss.numpy()
     check_numerical_grads(func, [i.numpy() for i in args], [i.numpy() for i in grad])
 
@@ -412,6 +357,7 @@ def test_gradient_api():
     assert_structural_equal(after_func, After["main_adjoint"])
     assert_structural_equal(after_func1, After["main_adjoint"])
 
+
 def test_tuple1():
     @I.ir_module
     class Before:
@@ -433,8 +379,6 @@ def test_tuple1():
 
     After = relax.transform.SimpleAD(Before.get_global_var("main"))(Before)
 
-    After.show()
-
     args = []
     for arg in After["main_adjoint"].params[:-1]:
         shape = [int(l) for l in arg.shape]
@@ -444,10 +388,10 @@ def test_tuple1():
     z /= z.sum(axis=1, keepdims=True)
     args.append(tvm.nd.array(z))
 
-    _, grad = execute_mod(After, "main_adjoint", *args)
+    _, grad = _execute_mod(After, "main_adjoint", *args)
 
     def func(*inputs):
-        loss = execute_mod(Before, "main", *[tvm.nd.array(i) for i in inputs])
+        loss = _execute_mod(Before, "main", *[tvm.nd.array(i) for i in inputs])
         return loss.numpy()
 
     check_numerical_grads(func, [i.numpy() for i in args], [i.numpy() for i in grad])
@@ -474,7 +418,6 @@ def test_tuple2():
             return loss
 
     After = relax.transform.SimpleAD(Before.get_global_var("main"))(Before)
-    After.show()
 
     args = []
     for arg in After["main_adjoint"].params[:-1]:
@@ -485,10 +428,10 @@ def test_tuple2():
     z /= z.sum(axis=1, keepdims=True)
     args.append(tvm.nd.array(z))
 
-    _, grad = execute_mod(After, "main_adjoint", *args)
+    _, grad = _execute_mod(After, "main_adjoint", *args)
 
     def func(*inputs):
-        loss = execute_mod(Before, "main", *[tvm.nd.array(i) for i in inputs])
+        loss = _execute_mod(Before, "main", *[tvm.nd.array(i) for i in inputs])
         return loss.numpy()
 
     check_numerical_grads(func, [i.numpy() for i in args], [i.numpy() for i in grad])
@@ -517,19 +460,17 @@ def test_tuple3():
                 R.output(z9)
             return z9
 
-    # Before.show()
     After = relax.transform.SimpleAD(Before.get_global_var("main"))(Before)
-    # After.show()
 
     x1 = rand("float32", *(10, 5))
     x2 = rand("float32", *(10, 5))
     y = rand("float32", *(10, 5))
     args_numpy = [x1.numpy(), x2.numpy(), y.numpy()]
 
-    _, grad = execute_mod(After, "main_adjoint", x1, x2, y)
+    _, grad = _execute_mod(After, "main_adjoint", x1, x2, y)
 
     def func(*inputs):
-        loss = execute_mod(Before, "main", *[tvm.nd.array(i) for i in inputs])
+        loss = _execute_mod(Before, "main", *[tvm.nd.array(i) for i in inputs])
         return loss.numpy()
 
     check_numerical_grads(func, args_numpy, [i.numpy() for i in grad])
@@ -577,8 +518,9 @@ def test_function_copy():
 
     After = relax.transform.SimpleAD(Before.get_global_var("main"))(Before)
     inputs = [rand("float32", 5, 5) for _ in range(4)]
-    out1 = execute_mod(Before, "main", *inputs)
-    out2, _ = execute_mod(After, "main_adjoint", *inputs)
+    out1 = _execute_mod(Before, "main", *inputs)
+    out2, _ = _execute_mod(After, "main_adjoint", *inputs)
+    assert rx.analysis.well_formed(After)
     assert(out1.numpy() == out2.numpy())
 
 

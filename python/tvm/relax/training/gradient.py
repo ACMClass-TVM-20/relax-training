@@ -16,15 +16,18 @@ from tvm.relax.op import (
 	tanh
 )
 
+
 @register_gradient("relax.add")
 def add_grad(orig, grad):
 	"""Returns [grad, grad]"""
 	return [collapse_sum_like(grad, orig.args[0]), collapse_sum_like(grad, orig.args[1])]
 
+
 @register_gradient("relax.subtract")
 def subtract_grad(orig, grad):
 	"""Returns [grad, -grad]"""
 	return [collapse_sum_like(grad, orig.args[0]), collapse_sum_like(negative(grad), orig.args[1])]
+
 
 @register_gradient("relax.multiply")
 def multiply_grad(orig, grad):
@@ -32,11 +35,13 @@ def multiply_grad(orig, grad):
 	x, y = orig.args
 	return [collapse_sum_like(multiply(grad, y), x), collapse_sum_like(multiply(grad, x), y)]
 
+
 @register_gradient("relax.transpose")
 def transpose_grad(orig, grad):
 	"""Returns grad transposed over the complement of original transpose axes"""
 	"""TODO: Do not support more than one dimensions"""
 	return [transpose(grad)]
+
 
 @register_gradient("relax.nn.relu")
 def relu_grad(orig, grad):
@@ -52,6 +57,7 @@ def matmul_grad(orig, grad):
 		collapse_sum_like(nn.matmul(grad, transpose(tensor_b)), tensor_a),
 		collapse_sum_like(nn.matmul(transpose(tensor_a), grad), tensor_b),
 	]
+
 
 @register_gradient("relax.sum")
 def sum_grad(orig, grad):
@@ -73,17 +79,19 @@ def sum_grad(orig, grad):
 # 	grad = grad / batch_size.astype(x.checked_type.dtype)
 # 	return [-grad * y / x, -grad * log(x)]
 
+
 # softmax_cross_entropy(z, y)
 @register_gradient("relax.nn.softmax_cross_entropy")
 def softmax_cross_entropy_grad(orig, grad):
 	y_hat = softmax(orig.args[0])
 	return [multiply(grad, subtract(y_hat, orig.args[1])), multiply(grad, negative(log(y_hat)))]
-	# return [subtract(y_hat, orig.args[1]), negative(log(y_hat))]
+
 
 @register_gradient("relax.nn.sigmoid")
 def sigmoid_grad(orig, grad):
 	out = sigmoid(orig.args[0])
 	return [multiply(grad, multiply(out, subtract(ones_like(out), out)))]
+
 
 @register_gradient("relax.nn.tanh")
 def tanh_grad(orig, grad):
