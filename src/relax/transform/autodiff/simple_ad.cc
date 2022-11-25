@@ -368,7 +368,7 @@ class SimpleADMutator : public ExprMutator {
   }
 
   void InitGrad(const Var& adjoint_var, const Var& var) {
-    const Expr& init = Call(init_op, {var});
+    const Expr& init = Call(init_op, {var->shape()});
     BindAndEmit(adjoint_var, init);
     VLOG(2) << "init grad: " << var->name_hint() << std::endl;
     adjoint_expr_map.Set(var, init);
@@ -391,7 +391,7 @@ class SimpleADMutator : public ExprMutator {
       Op::GetAttrMap<relay::FPrimalGradient>("FPrimalGradient");
 
   // constant
-  const Op& init_op = Op::Get("relax.ones_like");
+  const Op& init_op = Op::Get("relax.ones");
   const Op& add_op = Op::Get("relax.add");
   const Op& default_op = Op::Get("relax.zeros");
 };
