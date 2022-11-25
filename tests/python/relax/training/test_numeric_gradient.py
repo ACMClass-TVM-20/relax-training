@@ -20,8 +20,8 @@ import tvm
 from tvm import relax
 from tvm.testing.utils import check_numerical_grads
 
-from utils import LowerToTensorIRPass
-import _gradient
+from tvm.relax.transform.op_legalizer import OperatorLegalizer
+import tvm.relax.training.legalizer_update
 
 # add
 # subtract
@@ -61,7 +61,7 @@ def relax_check_gradients(op, input_data, is_output_scalar = False):
     target = tvm.target.Target("llvm")
     mod = bb.get()
     mod.show()
-    lower_mod = LowerToTensorIRPass()(mod)
+    lower_mod = OperatorLegalizer(mod).transform()
 
     def forward(*inputs):
         ex_0 = relax.vm.build(lower_mod, target)
@@ -70,7 +70,7 @@ def relax_check_gradients(op, input_data, is_output_scalar = False):
         return result.numpy()
 
     ad_mod = relax.transform.SimpleAD(mod.get_global_var("main"))(mod)
-    lower_ad_mod = LowerToTensorIRPass()(ad_mod)
+    lower_ad_mod = OperatorLegalizer(ad_mod).transform()
     ex = relax.vm.build(lower_ad_mod, target)
     vm = relax.VirtualMachine(ex, tvm.cpu())
     _, grads = vm["main_adjoint"](*tvm_data)
