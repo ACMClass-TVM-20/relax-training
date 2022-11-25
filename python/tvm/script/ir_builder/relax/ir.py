@@ -73,10 +73,17 @@ from tvm.relax.op import (
     unique,
     variance,
     # added by chaofan and yixin
+    dense,
+    log,
+    zeros_like,
     ones_like,
     collapse_sum_like,
+    gradrelu_,
+    cross_entropy,
     softmax_cross_entropy,
     negative,
+    sigmoid,
+    tanh
 )
 from tvm.relax.ty import ObjectType, ShapeType
 from tvm.relax.utils import convert_to_expr
@@ -471,8 +478,16 @@ __all__ = [
     "variance",
     "shape_of",
     "tensor",
+    # added by chaofan and yixin
+    "dense",
+    "log",
+    "zeros_like",
     "ones_like",
     "collapse_sum_like",
+    "gradrelu_",
+    "cross_entropy",
     "softmax_cross_entropy",
-    "negative"
+    "negative",
+    "sigmoid",
+    "tanh"
 ]

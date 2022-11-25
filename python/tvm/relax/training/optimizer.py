@@ -61,6 +61,23 @@ class Optimizer:
         self._param_list = params
         self._state = None
 
+    def set_params(self, params: Optional[Union[relax.Var, list[relax.Var]]]):
+        """Set one parameter or a list of new parameters.
+
+        Parameters
+        ----------
+        params: Optional[Union[relax.Var, list[relax.Var]]]
+            The parameter or the list of parameters to optimize.
+        """
+        if params is None:
+            self._params_list = None
+            return
+        if not isinstance(params, list):
+            params = [params]
+        if not all(isinstance(x, relax.Var) for x in params):
+            raise ValueError("Not all elements in argument params is relax.Var")
+        self._param_list = params
+
     def add_params(self, params: Union[relax.Var, list[relax.Var]]):
         """Add one parameter or a list of new parameters.
 
