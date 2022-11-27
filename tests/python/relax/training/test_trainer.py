@@ -27,7 +27,7 @@ from tvm.relay.testing import rand
 # from tvm.script import relax as R
 from tvm.testing import assert_allclose
 from tvm.testing.utils import check_numerical_grads
-from tvm.script._parser import ir as I, relax as R, tir as T
+from tvm.script.parser import ir as I, relax as R, tir as T
 from tvm._ffi.base import TVMError
 from tvm.ir.op import Op
 from tvm.relax.training import Trainer, SGD, MomentumSGD

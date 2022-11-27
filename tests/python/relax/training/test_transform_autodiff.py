@@ -26,7 +26,7 @@ from tvm.ir.base import assert_structural_equal
 from tvm.relay.testing import rand
 from tvm.testing import assert_allclose
 from tvm.testing.utils import check_numerical_grads
-from tvm.script._parser import ir as I, relax as R, tir as T
+from tvm.script.parser import ir as I, relax as R, tir as T
 from tvm._ffi.base import TVMError
 from tvm.relax.transform import OperatorLegalizer
 

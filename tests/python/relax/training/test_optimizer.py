@@ -22,7 +22,7 @@ import tvm
 from tvm import relax
 from tvm import relax as rx
 from tvm import IRModule
-from tvm.script._parser import ir as I, relax as R, tir as T
+from tvm.script.parser import ir as I, relax as R, tir as T
 from tvm.ir.op import Op
 from tvm.relax.training import SGD, MomentumSGD
 from tvm.relay.testing import rand
