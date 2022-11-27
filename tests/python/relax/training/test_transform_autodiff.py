@@ -26,7 +26,7 @@ from tvm.ir.base import assert_structural_equal
 from tvm.relay.testing import rand
 from tvm.testing import assert_allclose
 from tvm.testing.utils import check_numerical_grads
-from tvm.script._parser import ir as I, relax as R, tir as T
+from tvm.script.parser import ir as I, relax as R, tir as T
 from tvm._ffi.base import TVMError
 from tvm.relax.transform import OperatorLegalizer
 
@@ -145,7 +145,7 @@ def test_default_require_grads():
                 lv4 = R.add(lv1, lv2)
                 lv5 = R.add(lv4, lv3)
                 lv6 = R.sum(lv5)
-                lv6_adjoint = R.ones_like(lv6)
+                lv6_adjoint = R.ones(())
                 lv = R.ones_like(lv5)
                 lv5_adjoint = R.multiply(lv6_adjoint, lv)
                 lv4_adjoint = R.collapse_sum_like(lv5_adjoint, lv4)
@@ -196,7 +196,7 @@ def test_default_require_grads():
                 lv4 = R.add(lv1, lv2)
                 lv5 = R.add(lv4, lv3)
                 lv6 = R.sum(lv5)
-                lv6_adjoint = R.ones_like(lv6)
+                lv6_adjoint = R.ones(())
                 lv = R.ones_like(lv5)
                 lv5_adjoint = R.multiply(lv6_adjoint, lv)
                 lv4_adjoint = R.collapse_sum_like(lv5_adjoint, lv4)
@@ -251,7 +251,7 @@ def test_batch_mlp_script():
                 lv0 = R.matmul(x, w0)
                 out = R.add(lv0, b0)
                 loss = R.softmax_cross_entropy(out, label)
-                loss_adjoint = R.ones_like(loss)
+                loss_adjoint = R.ones(())
                 lv = R.softmax(out)
                 lv1 = R.subtract(lv, label)
                 out_adjoint = R.multiply(loss_adjoint, lv1)
@@ -264,6 +264,7 @@ def test_batch_mlp_script():
             return (loss, relax.Tuple((w0_adjoint, b0_adjoint)))
 
     After = relax.transform.SimpleAD(Before.get_global_var("main"), require_grads=Before["main"].params[1:3])(Before)
+    After.show()
     assert_structural_equal(After["main_adjoint"], Expected["main_adjoint"])
     _check_mod_grad_equal(Expected, After, "main_adjoint")
 
@@ -339,7 +340,7 @@ def test_gradient_api():
                 lv0 = R.matmul(x, w0)
                 out = R.add(lv0, b0)
                 loss = R.softmax_cross_entropy(out, label)
-                loss_adjoint = R.ones_like(loss)
+                loss_adjoint = R.ones(())
                 lv = R.softmax(out)
                 lv1 = R.subtract(lv, label)
                 out_adjoint = R.multiply(loss_adjoint, lv1)

@@ -23,6 +23,11 @@ import tvm
 from . import _ffi_api
 from ..expr import Expr
 
+from typing import List, Optional, Tuple, Union
+from tvm.ir.expr import PrimExpr
+from tvm import relax
+PrimExprLike = Union[int, PrimExpr]
+
 
 def add(lhs: Expr, rhs: Expr) -> Expr:
     """Addition with numpy-style broadcasting.
@@ -251,3 +256,20 @@ def zeros_like(lhs: Expr) -> Expr:
 
 def negative(lhs: Expr) -> Expr:
     return _ffi_api.negative(lhs)
+
+def ones(shape: Union[PrimExprLike, List[PrimExprLike], Tuple[PrimExprLike], Expr]) -> Expr:
+    if isinstance(shape, (PrimExpr, int)):
+        shape = [shape]
+    if isinstance(shape, (tuple, list)):
+        temp_shape = []
+        for shape in shape:
+            if isinstance(shape, PrimExpr):
+                temp_shape.append(shape)
+            elif isinstance(shape, int):
+                temp_shape.append(tvm.tir.const(shape, "int32"))
+            else:
+                raise RuntimeError(
+                    f"The input new shape of ones operator contains unrecognized dimension {shape}"
+                )
+        shape = relax.ShapeExpr(temp_shape)
+    return _ffi_api.ones(shape)

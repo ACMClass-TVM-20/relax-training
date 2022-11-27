@@ -73,6 +73,7 @@ from tvm.relax.op import (
     unique,
     variance,
     # added by chaofan and yixin
+    ones,
     dense,
     log,
     zeros_like,
@@ -479,6 +480,7 @@ __all__ = [
     "shape_of",
     "tensor",
     # added by chaofan and yixin
+    "ones",
     "dense",
     "log",
     "zeros_like",
