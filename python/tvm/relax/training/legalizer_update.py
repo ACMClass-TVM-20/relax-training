@@ -44,51 +44,11 @@ def map_softmax_cross_entropy(bb: BlockBuilder, args: List[Expr], attrs: Attrs, 
 def map_sigmoid(bb: BlockBuilder, args: List[Expr], attrs: Attrs, output_shape: Expr):
     return bb.call_te(topi.sigmoid, args[0])
 
-def map_tanh(bb: BlockBuilder, args: List[Expr], attrs: Attrs, output_shape: Expr):
-    return bb.call_te(topi.tanh, args[0])
-
-def map_negative(bb: BlockBuilder, args: List[Expr], attrs: Attrs, output_shape: Expr):
-    return bb.call_te(topi.negative, args[0])
-
-def map_log(bb: BlockBuilder, args: List[Expr], attrs: Attrs, output_shape: Expr):
-    return bb.call_te(topi.log, args[0])
-
-def map_ones_like(bb: BlockBuilder, args: List[Expr], attrs: Attrs, output_shape: Expr):
-    def te_ones_like(x):
-        return topi.full_like(x, 1.0)
-    return bb.call_te(te_ones_like, args[0])
-
-def map_zeros_like(bb: BlockBuilder, args: List[Expr], attrs: Attrs, output_shape: Expr):
-    def te_zeros_like(x):
-        return topi.full_like(x, 0.0)
-    return bb.call_te(te_zeros_like, args[0])
-
-def map_collapse_sum_like(bb: BlockBuilder, args: List[Expr], attrs: Attrs, output_shape: Expr):
-    def te_collapse_sum_like(x, y):
-        return topi.collapse_sum(x, y.shape)
-    return bb.call_te(te_collapse_sum_like, args[0], args[1])
-
-def map_zeros(bb: BlockBuilder, args: List[Expr], attrs: Attrs, output_shape: Expr):
-    shape_values = [prim_expr.value for prim_expr in args[0].values]
-    return tvm.relay.const(np.zeros(shape_values))
-
-def map_ones(bb: BlockBuilder, args: List[Expr], attrs: Attrs, output_shape: Expr):
-    shape_values = [prim_expr.value for prim_expr in args[0].values]
-    return tvm.relay.const(np.ones(shape_values))
-
 extra_map = {
   ir.Op.get("relax.nn.gradrelu_"): map_gradrelu_,
   ir.Op.get("relax.nn.cross_entropy"): map_cross_entropy,
   ir.Op.get("relax.nn.softmax_cross_entropy"): map_softmax_cross_entropy,
   ir.Op.get("relax.nn.sigmoid"): map_sigmoid,
-  ir.Op.get("relax.nn.tanh"): map_tanh,
-  ir.Op.get("relax.negative"): map_negative,
-  ir.Op.get("relax.ones_like"): map_ones_like,
-  ir.Op.get("relax.zeros_like"): map_zeros_like,
-  ir.Op.get("relax.collapse_sum_like"): map_collapse_sum_like,
-  ir.Op.get("relax.log"): map_log,
-  ir.Op.get("relax.zeros"): map_zeros,
-  ir.Op.get("relax.ones"): map_ones
 }
 
 op_legalization_map.update(extra_map)

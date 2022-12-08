@@ -93,7 +93,7 @@ def sigmoid_grad(orig, grad):
 	return [multiply(grad, multiply(out, subtract(ones_like(out), out)))]
 
 
-@register_gradient("relax.nn.tanh")
+@register_gradient("relax.tanh")
 def tanh_grad(orig, grad):
 	out = tanh(orig.args[0])
 	return [multiply(grad, subtract(ones_like(out), multiply(out, out)))]

@@ -131,6 +131,22 @@ def floor_divide(lhs, rhs) -> Expr:
     return _ffi_api.floor_divide(lhs, rhs)
 
 
+def negative(lhs: Expr) -> Expr:
+    """Compute element-wise negative of data.
+
+    Parameters
+    ----------
+    data : relax.Expr
+        The input data
+
+    Returns
+    -------
+    result : relax.Expr
+        The computed result
+    """
+    return _ffi_api.negative(lhs)
+
+
 def sin(data: Expr) -> Expr:
     """Compute elementwise sin of data.
 
@@ -163,6 +179,22 @@ def cos(data: Expr) -> Expr:
     return _ffi_api.cos(data)
 
 
+def tanh(data: Expr) -> Expr:
+    """Compute elementwise tanh of data.
+
+    Parameters
+    ----------
+    data : relax.Expr
+        The input data
+
+    Returns
+    -------
+    result : relax.Expr
+        The computed result.
+    """
+    return _ffi_api.tanh(data)
+
+
 def sqrt(data: Expr) -> Expr:
     """Compute elementwise square root of data.
 
@@ -177,6 +209,22 @@ def sqrt(data: Expr) -> Expr:
         The computed result.
     """
     return _ffi_api.sqrt(data)
+
+
+def log(data: Expr) -> Expr:
+    """Compute elementwise natural logarithm of data.
+
+    Parameters
+    ----------
+    data : relax.Expr
+        The input data
+
+    Returns
+    -------
+    ret : relax.Expr
+        The computed result
+    """
+    return _ffi_api.log(data)
 
 
 def unique(
@@ -240,36 +288,3 @@ def numpy_unique(
         return tvm.nd.array(output_sorted_numpy)
     output_numpy = [a_numpy.flatten()[index] for index in sorted(indices, reverse=True)]
     return tvm.nd.array(output_numpy)
-
-
-def collapse_sum_like(lhs: Expr, rhs: Expr) -> Expr:
-    return _ffi_api.collapse_sum_like(lhs, rhs)
-
-def log(lhs: Expr) -> Expr:
-    return _ffi_api.log(lhs)
-
-def ones_like(lhs: Expr) -> Expr:
-    return _ffi_api.ones_like(lhs)
-
-def zeros_like(lhs: Expr) -> Expr:
-    return _ffi_api.zeros_like(lhs)
-
-def negative(lhs: Expr) -> Expr:
-    return _ffi_api.negative(lhs)
-
-def ones(shape: Union[PrimExprLike, List[PrimExprLike], Tuple[PrimExprLike], Expr]) -> Expr:
-    if isinstance(shape, (PrimExpr, int)):
-        shape = [shape]
-    if isinstance(shape, (tuple, list)):
-        temp_shape = []
-        for shape in shape:
-            if isinstance(shape, PrimExpr):
-                temp_shape.append(shape)
-            elif isinstance(shape, int):
-                temp_shape.append(tvm.tir.const(shape, "int32"))
-            else:
-                raise RuntimeError(
-                    f"The input new shape of ones operator contains unrecognized dimension {shape}"
-                )
-        shape = relax.ShapeExpr(temp_shape)
-    return _ffi_api.ones(shape)

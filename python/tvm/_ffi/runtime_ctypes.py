@@ -86,6 +86,7 @@ class DataType(ctypes.Structure):
         np.dtype(np.float32): "float32",
         np.dtype(np.float64): "float64",
         np.dtype(np.float_): "float64",
+        # np.dtype(np.void): "void",
     }
     STR2DTYPE = {
         "bool": {"type_code": DataTypeCode.UINT, "bits": 1, "lanes": 1},
@@ -100,6 +101,7 @@ class DataType(ctypes.Structure):
         "float16": {"type_code": DataTypeCode.FLOAT, "bits": 16, "lanes": 1},
         "float32": {"type_code": DataTypeCode.FLOAT, "bits": 32, "lanes": 1},
         "float64": {"type_code": DataTypeCode.FLOAT, "bits": 64, "lanes": 1},
+        # "void": {"type_code": DataTypeCode.HANDLE, "bits": 0, "lanes": 0},
     }
 
     def __init__(self, type_str):

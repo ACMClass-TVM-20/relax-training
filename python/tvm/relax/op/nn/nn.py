@@ -637,6 +637,3 @@ def softmax_cross_entropy(lhs: Expr, rhs: Expr) -> Expr:
 
 def sigmoid(data: Expr) -> Expr:
     return _ffi_api.sigmoid(data)
-
-def tanh(data: Expr) -> Expr:
-    return _ffi_api.tanh(data)

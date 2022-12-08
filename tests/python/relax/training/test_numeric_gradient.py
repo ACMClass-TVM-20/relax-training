@@ -31,7 +31,7 @@ import tvm.relax.training.legalizer_update
 # nn.matmul
 # nn.softmax_cross_entropy
 # nn.sigmoid
-# nn.tanh
+# tanh
 
 def relax_check_gradients(op, input_data, is_output_scalar = False):
     """
