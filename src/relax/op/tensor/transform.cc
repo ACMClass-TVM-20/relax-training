@@ -942,6 +942,9 @@ Optional<Expr> InferShapeFull(const Call& call, DiagnosticContext diag_ctx) {
                        << fill_value_shape->values.size());
   }
 
+  LOG(WARNING) << ::tvm::runtime::Backtrace();
+  // ::tvm::runtime::detail::LogFatal(__FILE__, __LINE__).stream();
+  // LOG(FATAL) << "123";
   return call->args[1];
 }
 

@@ -354,6 +354,7 @@ def full(
 
     if dtype is None:
         # dtype = tvm.DataType("void")
+        # leave dtype to be None so it will be converted into void type in PackedFunc calling process
         dtype = None
     elif isinstance(dtype, str):
         dtype = tvm.DataType(dtype)
