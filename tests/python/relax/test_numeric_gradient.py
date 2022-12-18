@@ -93,6 +93,15 @@ def test_add(target, dev):
 
 
 @tvm.testing.parametrize_targets("llvm")
+def test_add_broadcast(target, dev):
+    data1_numpy = np.random.randint(0, 16, (3, 3)).astype(np.float32)
+    data2_numpy = np.random.randint(0, 16, (3,)).astype(np.float32)
+    relax_check_gradients(
+        relax.op.add, "relax.add", [data1_numpy, data2_numpy], target, dev, (3, 3)
+    )
+
+
+@tvm.testing.parametrize_targets("llvm")
 def test_subtract(target, dev):
     data1_numpy = np.random.randint(0, 16, (3, 3)).astype(np.float32)
     data2_numpy = np.random.randint(0, 16, (3, 3)).astype(np.float32)

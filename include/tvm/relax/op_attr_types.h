@@ -80,6 +80,17 @@ using FCallPacked = String;
 using FTVMCompute = runtime::TypedPackedFunc<Array<te::Tensor>(
     const Attrs& attrs, const Array<te::Tensor>& inputs, const Type& out_type)>;
 
+/*!
+ * \brief Gradient for a specific op.
+ *        This definition is the same as tvm::relay::FPrimalGradient.
+ *
+ * \param orig_call the original Expr.
+ * \param output_grad the gradient of the Expr.
+ * \return the gradient for each parameters.
+ */
+using FPrimalGradient =
+    runtime::TypedPackedFunc<tvm::Array<Expr>(const Expr& orig_call, const Expr& output_grad)>;
+
 /*! \brief Attributes used in MaxPool2d operator */
 struct MaxPool2DAttrs : public tvm::AttrsNode<MaxPool2DAttrs> {
   Array<PrimExpr> pool_size;

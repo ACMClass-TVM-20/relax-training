@@ -15,9 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 """Gradient definitions for Relax operators"""
-from tvm.relax import const, Tuple
-from tvm.relay.op import register_gradient
-import tvm.relax.op.nn as nn
+from tvm import relax
+from tvm.relax.op import register_gradient
+from tvm.relax.op import nn
 from tvm.relax.op import (
     sum,
     mean,
@@ -40,10 +40,14 @@ from tvm.relax.op import (
 from tvm.relax.expr import Call, Var
 
 
+
 @register_gradient("relax.add")
 def add_grad(orig: Call, grad: Var):
     """Returns [grad, grad]."""
-    return [collapse_sum_to(grad, orig.args[0].shape), collapse_sum_to(grad, orig.args[1].shape)]
+    return [
+        collapse_sum_to(grad, orig.args[0].shape),
+        collapse_sum_to(grad, orig.args[1].shape)
+    ]
 
 
 @register_gradient("relax.subtract")
@@ -79,9 +83,8 @@ def transpose_grad(orig: Call, grad: Var):
 def relu_grad(orig: Call, grad: Var):
     """Returns grad * (select(x < 0, 0, 1))."""
     x = orig.args[0]
-    x_zeros = zeros(x.shape)
-    x_ones = ones(x.shape)
-    return [where(less(x, x_zeros), x_zeros, multiply(x_ones, grad))]
+    zero = relax.const(0.0, dtype=x.checked_type.dtype)
+    return [where(less(x, zero), zero, grad)]
 
 
 @register_gradient("relax.nn.matmul")
@@ -93,12 +96,10 @@ def matmul_grad(orig: Call, grad: Var):
     Generally, returns [grad @ b^T, a^T @ grad]. Here we only transpose the last two dimensions
     because of the definition of batch matmul. Note that ndim=1 should be treaded specially.
     """
-
     tensor_a, tensor_b = orig.args
 
     a_dim = len(tensor_a.shape)
     b_dim = len(tensor_b.shape)
-    grad_dim = len(grad.shape)
 
     def _transpose_last_two_dim(tensor, ndim):
         """Helper function for reversing the last two dimensions."""
@@ -127,7 +128,10 @@ def matmul_grad(orig: Call, grad: Var):
         a_grad = multiply(grad, tensor_b)
         b_grad = multiply(grad, tensor_a)
 
-    return [collapse_sum_to(a_grad, tensor_a.shape), collapse_sum_to(b_grad, tensor_b.shape)]
+    return [
+        collapse_sum_to(a_grad, tensor_a.shape),
+        collapse_sum_to(b_grad, tensor_b.shape)
+    ]
 
 
 @register_gradient("relax.sum")

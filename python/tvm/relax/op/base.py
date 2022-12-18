@@ -344,3 +344,20 @@ def shape_of(expr: Expr) -> Expr:
         A relax Call, which gets the shape of the input
     """
     return _ffi_api.shape_of(expr)  # type: ignore # pylint: disable=no-member
+
+
+def register_gradient(op_name, fgradient=None, level=10):
+    """Register operator gradient function for a relax operator.
+
+    Parameters
+    ----------
+    op_name : str
+        The name of the op.
+
+    fgradient : function (orig_expr : Expr, output_grad : Expr) -> new_expr : Expr
+        The gradient being used.
+
+    level : int
+        The priority level
+    """
+    return tvm.ir.register_op_attr(op_name, "FPrimalGradient", fgradient, level)

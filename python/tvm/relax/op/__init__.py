@@ -27,3 +27,7 @@ from . import builtin
 from . import image
 from . import memory
 from . import nn
+
+
+# Register gradient for operators
+from . import gradient
