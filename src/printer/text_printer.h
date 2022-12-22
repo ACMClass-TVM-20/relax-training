@@ -594,7 +594,8 @@ class TextPrinter {
     } else if (node.defined() &&
                (node->IsInstance<relax::VarNode>() || node->IsInstance<relax::FunctionNode>() ||
                 node->IsInstance<relax::ShapeExprNode>() ||
-                node->IsInstance<relax::RuntimeDepShapeNode>())) {
+                node->IsInstance<relax::RuntimeDepShapeNode>() ||
+                node->IsInstance<relax::TupleNode>())) {
       doc << relax_text_printer_.Print(node);
     } else {
       doc << relay_text_printer_.PrintFinal(node);

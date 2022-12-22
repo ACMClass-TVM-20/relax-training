@@ -40,7 +40,6 @@ from tvm.relax.op import (
 from tvm.relax.expr import Call, Var
 
 
-
 @register_gradient("relax.add")
 def add_grad(orig: Call, grad: Var):
     """Returns [grad, grad]."""
