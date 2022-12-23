@@ -86,7 +86,7 @@ using FTVMCompute = runtime::TypedPackedFunc<Array<te::Tensor>(
  *
  * \param orig_call the original Expr.
  * \param output_grad the gradient of the Expr.
- * \return the gradient for each parameters.
+ * \return the gradient for each parameter.
  */
 using FPrimalGradient =
     runtime::TypedPackedFunc<tvm::Array<Expr>(const Expr& orig_call, const Expr& output_grad)>;
