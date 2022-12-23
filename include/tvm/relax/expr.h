@@ -224,7 +224,7 @@ class TupleNode : public ExprNode {
     if (fields.size() == other->fields.size() && fields.size() == 0) {
       return true;
     } else {
-      equal->MarkGraphNode();
+      // equal->MarkGraphNode();
       return equal(fields, other->fields);
     }
   }
@@ -404,7 +404,7 @@ class VarNode : public ExprNode {
   }
 
   bool SEqualReduce(const VarNode* other, SEqualReducer equal) const {
-    equal->MarkGraphNode();
+    // equal->MarkGraphNode();
     return equal(vid, other->vid) && equal(checked_type_, other->checked_type_) &&
            equal(shape_, other->shape_);
   }
@@ -447,7 +447,7 @@ class DataflowVarNode : public VarNode {
   }
 
   bool SEqualReduce(const DataflowVarNode* other, SEqualReducer equal) const {
-    equal->MarkGraphNode();
+    // equal->MarkGraphNode();
     return equal(vid, other->vid) && equal(shape_, other->shape_) &&
            equal(checked_type_, other->checked_type_);
   }
