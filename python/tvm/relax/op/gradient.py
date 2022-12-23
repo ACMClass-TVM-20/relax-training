@@ -43,10 +43,7 @@ from tvm.relax.expr import Call, Var
 @register_gradient("relax.add")
 def add_grad(orig: Call, grad: Var):
     """Returns [grad, grad]."""
-    return [
-        collapse_sum_to(grad, orig.args[0].shape),
-        collapse_sum_to(grad, orig.args[1].shape)
-    ]
+    return [collapse_sum_to(grad, orig.args[0].shape), collapse_sum_to(grad, orig.args[1].shape)]
 
 
 @register_gradient("relax.subtract")
@@ -127,10 +124,7 @@ def matmul_grad(orig: Call, grad: Var):
         a_grad = multiply(grad, tensor_b)
         b_grad = multiply(grad, tensor_a)
 
-    return [
-        collapse_sum_to(a_grad, tensor_a.shape),
-        collapse_sum_to(b_grad, tensor_b.shape)
-    ]
+    return [collapse_sum_to(a_grad, tensor_a.shape), collapse_sum_to(b_grad, tensor_b.shape)]
 
 
 @register_gradient("relax.sum")

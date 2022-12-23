@@ -137,8 +137,7 @@ TVM_REGISTER_GLOBAL("relax.op.less").set_body_typed([](Expr lhs, Expr rhs) {
 
 Type InferTypeLess(const Call& call, DiagnosticContext diag_ctx) {
   if (call->args.size() != 2) {
-    diag_ctx.EmitFatal(Diagnostic::Error(call->span)
-                       << "Less op should have 2 arguments");
+    diag_ctx.EmitFatal(Diagnostic::Error(call->span) << "Less op should have 2 arguments");
   }
   Type lhs_type = call->args[0]->checked_type();
   Type rhs_type = call->args[1]->checked_type();

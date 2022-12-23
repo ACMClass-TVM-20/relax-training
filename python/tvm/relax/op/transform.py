@@ -27,7 +27,9 @@ from ..expr import Expr
 PrimExprLike = Union[int, PrimExpr]
 
 
-def _convert_shape_to_expr(input_shape: Union[PrimExprLike, List[PrimExprLike], Tuple[PrimExprLike], Expr]) -> Expr:
+def _convert_shape_to_expr(
+    input_shape: Union[PrimExprLike, List[PrimExprLike], Tuple[PrimExprLike], Expr]
+) -> Expr:
     if isinstance(input_shape, (PrimExpr, int)):
         input_shape = [input_shape]
     if isinstance(input_shape, (tuple, list)):
@@ -38,9 +40,7 @@ def _convert_shape_to_expr(input_shape: Union[PrimExprLike, List[PrimExprLike], 
             elif isinstance(shape, int):
                 temp_shape.append(tvm.tir.const(shape, "int64"))
             else:
-                raise RuntimeError(
-                    f"The input shape contains unrecognized dimension {shape}"
-                )
+                raise RuntimeError(f"The input shape contains unrecognized dimension {shape}")
         input_shape = relax.ShapeExpr(temp_shape)
     return input_shape
 
@@ -377,7 +377,7 @@ def full_like(data: Expr, fill_value: Expr) -> Expr:
 
 def ones(
     shape: Union[PrimExprLike, List[PrimExprLike], Tuple[PrimExprLike], Expr],
-    dtype: Optional[Union[str, tvm.DataType]] = "float32"
+    dtype: Optional[Union[str, tvm.DataType]] = "float32",
 ) -> Expr:
     """Fill array of given shape and dtype with ones.
 
@@ -403,7 +403,7 @@ def ones(
 
 def zeros(
     shape: Union[PrimExprLike, List[PrimExprLike], Tuple[PrimExprLike], Expr],
-    dtype: Optional[Union[str, tvm.DataType]] = "float32"
+    dtype: Optional[Union[str, tvm.DataType]] = "float32",
 ) -> Expr:
     """Fill array of given shape and dtype with zeros.
 
@@ -615,8 +615,7 @@ def collapse_sum_like(data: Expr, collapse_target: Expr) -> Expr:
 
 
 def collapse_sum_to(
-    data: Expr,
-    shape: Union[PrimExprLike, List[PrimExprLike], Tuple[PrimExprLike], Expr]
+    data: Expr, shape: Union[PrimExprLike, List[PrimExprLike], Tuple[PrimExprLike], Expr]
 ) -> Expr:
     """Return a summation of data to the given shape.
 
