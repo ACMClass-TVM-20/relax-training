@@ -48,6 +48,10 @@ Expr MakeCast(Expr data, DataType dtype);
 
 Expr MakeTranspose(Expr data, Optional<Array<Integer>> axes);
 
+Expr MakeOnes(Expr shape, DataType dtype);
+
+Expr MakeZeros(Expr shape, DataType dtype);
+
 }  // namespace relax
 }  // namespace tvm
 #endif  // TVM_RELAX_OP_MAKE_OP_H_
