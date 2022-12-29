@@ -150,33 +150,35 @@ class GradientMutator : public ExprMutator {
     BindAndEmit(adjoint_var, adjoint_expr_map_[binding->var]);
 
     // back propagation
-    if (const auto* node = binding->value.as<TupleNode>()) {
+    if (binding->value.as<TupleNode>()) {
       // case 1: tuple
       // a = ((c, d),)
       // b_adjoint_expr += a_adjoint_var[0], c_adjoint_expr += a_adjoint_var[1]
-      UpdateExprMap(GetRef<Tuple>(node), adjoint_expr_map_[binding->var]);
-    } else if (const auto* node = binding->value.as<TupleGetItemNode>()) {
+      UpdateExprMap(binding->value, adjoint_expr_map_[binding->var]);
+    } else if (binding->value.as<TupleGetItemNode>()) {
       // case 2: tuple get item
       // b = a[0]
       // a_adjoint_expr[0] (in fields) += b_adjoint_var
       // a = ((x, y), (z,))
       // b = a[0]
-      UpdateExprMap(GetRef<TupleGetItem>(node), adjoint_expr_map_[binding->var]);
-    } else if (const auto* node = binding->value.as<VarNode>()) {
-      // case 3: assign
+      UpdateExprMap(binding->value, adjoint_expr_map_[binding->var]);
+    } else if (binding->value.as<VarNode>()) {
+      // case 3: assign. rhs is Var
       // a = b
       // b_adjoint_expr += a_adjoint_var
-      UpdateExprMap(GetRef<Var>(node), adjoint_expr_map_[binding->var]);
+      UpdateExprMap(binding->value, adjoint_expr_map_[binding->var]);
     } else if (const auto* node = binding->value.as<CallNode>()) {
-      // case 4: call
+      // case 4: case 4: call
       const Op& call_op = GetRef<Op>(node->op.as<OpNode>());
       const Array<Expr>& partials = gradient_op_map[call_op](GetRef<Call>(node), adjoint_var);
       ICHECK(partials.size() == node->args.size()) << "partials number != inputs number";
       for (size_t i = 0; i < partials.size(); ++i) {
-        const VarNode* arg = node->args[i].as<VarNode>();
-        ICHECK(arg != nullptr);
-        UpdateExprMap(GetRef<Var>(arg), partials[i]);
+        UpdateExprMap(node->args[i], partials[i]);
       }
+    } else if (binding->value.as<ConstantNode>()) {
+      // case 4: assign. rhs is Const
+      // nothing to do.
+      return;
     } else {
       LOG(FATAL) << "AD does not support this type of binding value now: " << binding->value;
     }
@@ -238,6 +240,8 @@ class GradientMutator : public ExprMutator {
       ICHECK(adjoint_expr_map_[v].as<TupleNode>()) << "adjoint of var is not tuple";
       adjoint_expr_map_.Set(
           v, DoAddInTuple(Downcast<Tuple>(adjoint_expr_map_[v]), node->index, increment));
+    } else if (base.as<ConstantNode>()) {
+      // nothing to do
     } else {
       LOG(FATAL) << "not a leaf node";
     }
