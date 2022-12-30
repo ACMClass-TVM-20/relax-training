@@ -24,12 +24,19 @@
 
 #include "binary.h"
 
+#include "../make_op.h"
+
 namespace tvm {
 namespace relax {
 
 RELAX_REGISTER_BINARY_BROADCAST_OP("add")
     .describe("Elementwise add with broadcasting")
     .set_support_level(1);
+
+Expr MakeAdd(Expr lhs, Expr rhs) {
+  static const Op& op = Op::Get("relax.add");
+  return Call(op, {lhs, rhs}, Attrs(), {});
+}
 
 RELAX_REGISTER_BINARY_BROADCAST_OP("subtract")
     .describe("Elementwise subtract with broadcasting")

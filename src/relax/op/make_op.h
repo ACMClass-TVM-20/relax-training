@@ -48,6 +48,8 @@ Expr MakeCast(Expr data, DataType dtype);
 
 Expr MakeTranspose(Expr data, Optional<Array<Integer>> axes);
 
+Expr MakeAdd(Expr lhs, Expr rhs);
+
 Expr MakeOnes(Expr shape, DataType dtype);
 
 Expr MakeZeros(Expr shape, DataType dtype);
