@@ -26,8 +26,8 @@
 
 #include <unordered_set>
 
-#include "unary.h"
 #include "../make_op.h"
+#include "unary.h"
 
 namespace tvm {
 namespace relax {

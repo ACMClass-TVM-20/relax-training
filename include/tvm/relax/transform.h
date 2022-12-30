@@ -210,9 +210,9 @@ TVM_DLL Pass ToMixedPrecision();
  * with respect to the only return value of the function, which needs to be scalar.
  *
  * For a given function specified by the input global var, it generates a new function with the name
- * `[name of original function] + "_adjoint"`. The new function computes the adjoints of the specified
- * arguments of the original function with respect to the only one return value of the original
- * function.
+ * `[name of original function] + "_adjoint"`. The new function computes the adjoints of the
+ * specified arguments of the original function with respect to the only one return value of the
+ * original function.
  *
  * For examples, see the MLP examples in tests/python/relax/test_transform_gradient.py and
  * tests/python/relax/test_transform_gradient_numeric.py.
