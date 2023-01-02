@@ -443,6 +443,42 @@ def Gradient(
     return _ffi_api.Gradient(global_var, require_grads)
 
 
+def ExtendFunc(global_var: GlobalVar, ex_func: Function):
+    """Extend a relax.Function (original funtion) in the mod by another given function (ex function).
+
+    Example:
+
+    Before:
+    @R.function
+    def func1(a, b):
+        return a + b, a * b
+
+    @R.function
+    def func2(c, d, e):
+        return d, c, c + e
+
+    After:
+    @R.function
+    def func1_func2(a, b, e):
+        c = a + b
+        d = a * b
+        return d, c, c + e
+
+    Parameters
+    ----------
+    global_var: relax.GlobalVar
+        The GlobalVar of the specific function.
+    ex_func: relax.Function
+        The function to be linked after the target function.
+    Returns
+    -------
+    ret: tvm.ir.transform.Pass
+        The Pass.
+    """
+
+    return _ffi_api.ExtendFunc(global_var, ex_func)
+
+
 def _wrap_class_function_pass(pass_cls, pass_info):
     """Wrap a python class as function pass."""
 
