@@ -107,6 +107,5 @@ Function CopyWithNewParams(Function func) { return FunctionCopier::Transform(fun
 
 TVM_REGISTER_GLOBAL("relax.CopyWithNewParams").set_body_typed(CopyWithNewParams);
 
-
 }  // namespace relax
 }  // namespace tvm
