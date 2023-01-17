@@ -154,7 +154,7 @@ class BackwardBindingGenerator : public ExprVisitor {
   void VisitBinding_(const VarBindingNode* binding, const ConstantNode* var) override { return; }
 
  private:
-  Expr GetField(const Expr &expr, int index) {
+  Expr GetField(const Expr& expr, int index) {
     if (const auto* node = expr.as<TupleNode>()) {
       return node->fields[index];
     }
@@ -163,11 +163,11 @@ class BackwardBindingGenerator : public ExprVisitor {
     return builder_->Normalize(TupleGetItem(expr, index));
   }
 
-  bool IsCallZeros(const Expr &expr) {
+  bool IsCallZeros(const Expr& expr) {
     return expr->IsInstance<CallNode>() && Downcast<Call>(expr)->op == Op::Get("relax.zeros");
   }
 
-  Var CreateAdjointVar(const Var &v, bool is_dataflow_var) {
+  Var CreateAdjointVar(const Var& v, bool is_dataflow_var) {
     Var adjoint;
     auto sinfo = GetStructInfo(v);
     if (is_dataflow_var) {
@@ -265,7 +265,7 @@ class BackwardBindingGenerator : public ExprVisitor {
     return builder_->Normalize(Tuple(ret));
   }
 
-  void BindAndEmit(const Var &v, const Expr &e) {
+  void BindAndEmit(const Var& v, const Expr& e) {
     builder_->EmitNormalized(VarBinding(v, builder_->Normalize(e)));
   }
 
@@ -309,8 +309,6 @@ class BackwardBindingGenerator : public ExprVisitor {
 
   // The differentiation target
   Var target_var_;
-  // The return value of the differentiated function
-  Expr return_expr_;
 
   // Forward Var to its adjoint Var
   Map<Var, Var> adjoint_var_map_;
