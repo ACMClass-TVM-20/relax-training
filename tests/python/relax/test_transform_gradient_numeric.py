@@ -133,4 +133,5 @@ def test_mlp_blockbuilder():
 
 
 if __name__ == "__main__":
-    pytest.main([__file__])
+    test_tuple()
+    # pytest.main([__file__])

@@ -60,7 +60,7 @@ class BackwardBindingGenerator : public ExprVisitor {
     }
 
     auto ret = std::move(this->Epilogue(require_grads));
-    ret->struct_info_ = TupleStructInfo(this->return_struct_info_);
+    UpdateStructInfo(ret, TupleStructInfo(this->return_struct_info_));
     return ret;
   }
 
@@ -106,7 +106,7 @@ class BackwardBindingGenerator : public ExprVisitor {
     ICHECK(partials.size() == call->args.size()) << "partials number != inputs number";
 
     for (size_t i = 0; i < partials.size(); ++i) {
-      UpdateAdjointForLeaf(call->args[i], partials[i]);
+      UpdateAdjointForLeaf(call->args[i], builder_->Normalize(partials[i]));
     }
   }
 
@@ -118,7 +118,7 @@ class BackwardBindingGenerator : public ExprVisitor {
   // b_adjoint_expr += a_adjoint_var[0][0], c_adjoint_expr += a_adjoint_var[0][1],
   // d_adjoint_expr += a_adjoint_var[1]
   void VisitBinding_(const VarBindingNode* binding, const TupleNode* tuple) override {
-    UpdateAdjointForLeaf(GetRef<Tuple>(tuple), adjoint_expr_map_[binding->var]);
+    UpdateAdjointForLeaf(GetRef<Tuple>(tuple), adjoint_var_map_[binding->var]);
   }
 
   // for TupleGetItem nodes, we do a partial update
@@ -135,42 +135,44 @@ class BackwardBindingGenerator : public ExprVisitor {
 
     const Var& tuple_var = Downcast<Var>(tuple_get_item->tuple);
     if (adjoint_expr_map_.count(tuple_var) == 0) {
-      const Tuple& init = BuildZerosTuple(tuple_sinfo);
+      const Expr& init = BuildZerosTuple(tuple_sinfo);
       adjoint_expr_map_.Set(tuple_var, init);
     }
 
-    ICHECK(adjoint_expr_map_[tuple_var].as<TupleNode>())
-        << "Adjoint of " << tuple_var << " is expected to be a tuple";
-    adjoint_expr_map_.Set(
-        tuple_var, AddElementInTuple(Downcast<Tuple>(adjoint_expr_map_[tuple_var]),
-                                     tuple_get_item->index, adjoint_expr_map_[binding->var]));
+    adjoint_expr_map_.Set(tuple_var,
+                          AddElementInTuple(adjoint_expr_map_[tuple_var], tuple_get_item->index,
+                                            adjoint_var_map_[binding->var]));
   }
 
   // for assign nodes, we add the adjoint of output to the adjoint of input
   void VisitBinding_(const VarBindingNode* binding, const DataflowVarNode* var) override {
-    UpdateAdjointForLeaf(GetRef<Var>(var), adjoint_expr_map_[binding->var]);
+    UpdateAdjointForLeaf(GetRef<Var>(var), adjoint_var_map_[binding->var]);
   }
 
   void VisitBinding_(const VarBindingNode* binding, const VarNode* var) override {
-    UpdateAdjointForLeaf(GetRef<Var>(var), adjoint_expr_map_[binding->var]);
+    UpdateAdjointForLeaf(GetRef<Var>(var), adjoint_var_map_[binding->var]);
   }
 
   // for constant nodes, we do not have to handle it because it does not produce adjoint
   void VisitBinding_(const VarBindingNode* binding, const ConstantNode* var) override { return; }
 
  private:
+  Expr GetField(Expr expr, int index) {
+    if (const auto* node = expr.as<TupleNode>()) {
+      return node->fields[index];
+    }
+    const auto* sinfo = GetStructInfoAs<TupleStructInfoNode>(expr);
+    ICHECK(sinfo != nullptr) << "GetField: expr must has TupleStructInfo.";
+    auto ret = TupleGetItem(expr, index);
+    UpdateStructInfo(ret, sinfo->fields[index]);
+    return ret;
+  }
+
   bool IsCallZeros(Expr expr) {
     if (const auto* node = expr.as<CallNode>()) {
       return node->op == Op::Get("relax.zeros");
     }
     return false;
-  }
-
-  Expr ReplaceExprByVar(Expr expr) {
-    if (adjoint_expr_to_var_.count(expr)) {
-      return adjoint_expr_to_var_[expr];
-    }
-    return expr;
   }
 
   Var CreateAdjointVar(Var v, bool is_dataflow_var) {
@@ -190,16 +192,14 @@ class BackwardBindingGenerator : public ExprVisitor {
     if (const auto* node = leaf.as<VarNode>()) {
       const Var& v = GetRef<Var>(node);
       if (adjoint_expr_map_.count(v) == 0) {
-        adjoint_expr_map_.Set(v, ReplaceExprByVar(partial));
+        adjoint_expr_map_.Set(v, partial);
       } else {
         const Expr& updated = TupleAwareAdd(adjoint_expr_map_[v], partial);
         adjoint_expr_map_.Set(v, updated);
       }
     } else if (const auto* node0 = leaf.as<TupleNode>()) {
-      const auto* node1 = partial.as<TupleNode>();
-      ICHECK(node1) << "Base and increment should be both tuple";
       for (size_t i = 0; i < node0->fields.size(); ++i) {
-        UpdateAdjointForLeaf(node0->fields[i], node1->fields[i]);
+        UpdateAdjointForLeaf(node0->fields[i], GetField(partial, i));
       }
     } else if (leaf.as<ConstantNode>()) {
       // nothing to do
@@ -210,7 +210,7 @@ class BackwardBindingGenerator : public ExprVisitor {
   }
 
   // Build a "zeros" tuple with specified tuple struct info and type
-  Tuple BuildZerosTuple(const TupleStructInfoNode* sinfo) {
+  Expr BuildZerosTuple(const TupleStructInfoNode* sinfo) {
     Array<Expr> ret;
     for (const auto& field : sinfo->fields) {
       if (auto* tuple_sinfo = field.as<TupleStructInfoNode>()) {
@@ -223,56 +223,54 @@ class BackwardBindingGenerator : public ExprVisitor {
         LOG(FATAL) << "Unsupported struct info when building zeros tuple: " << field;
       }
     }
-    return Tuple(ret);
+    return builder_->Normalize(Tuple(ret));
   }
 
   // Return base + increment. A tuple-aware addition.
   Expr TupleAwareAdd(const Expr& base, const Expr& increment) {
     if (IsCallZeros(base)) {
-      return ReplaceExprByVar(increment);
+      return increment;
     } else if (IsCallZeros(increment)) {
-      return ReplaceExprByVar(base);
+      return base;
     }
 
-    if (const auto* base_node = base.as<TupleNode>()) {
-      const TupleNode* increment_node = increment.as<TupleNode>();
-      ICHECK(increment_node) << "Type not match: base and increment should be both tuple";
-      ICHECK(base_node->fields.size() == increment_node->fields.size())
+    if (const auto* base_sinfo = GetStructInfoAs<TupleStructInfoNode>(base)) {
+      const auto* increment_sinfo = GetStructInfoAs<TupleStructInfoNode>(increment);
+      ICHECK(increment_sinfo)
+          << "StructInfo not match: base and increment should both have TupleStructInfo";
+      ICHECK(base_sinfo->fields.size() == increment_sinfo->fields.size())
           << "Size of tuple not match";
       Array<Expr> result;
-      for (size_t i = 0; i < base_node->fields.size(); ++i) {
-        result.push_back(TupleAwareAdd(base_node->fields[i], increment_node->fields[i]));
+      for (size_t i = 0; i < base_sinfo->fields.size(); ++i) {
+        result.push_back(TupleAwareAdd(GetField(base, i), GetField(increment, i)));
       }
-      return Tuple(result);
+      return builder_->Normalize(Tuple(result));
+    } else if (GetStructInfoAs<TensorStructInfoNode>(base)) {
+      ICHECK(GetStructInfoAs<TensorStructInfoNode>(increment))
+          << "StructInfo not match: base and increment should both have TensorStructInfo";
+      return builder_->Normalize(add(base, increment));
     } else {
-      // Here we don't ReplaceExprByVar(base) because base is an adjoint_expr that
-      // already bound to a adjoint_var. We wnat to update the adjoint_expr.
-      return add(base, ReplaceExprByVar(increment));
+      LOG(FATAL) << "Unsupport struct info found in TupleAwareAdd.";
     }
   }
 
   // Perform an addition in a specified position of tuple.
   // e.g. tuple=(a, b, c), index=1, increment=d, then return (a, b+d, c)
-  Tuple AddElementInTuple(const Tuple& tuple, int index, const Expr& increment) {
+  Expr AddElementInTuple(const Expr& tuple, int index, const Expr& increment) {
     Array<Expr> ret;
-    for (size_t i = 0; i < tuple->fields.size(); ++i) {
+    auto* tuple_sinfo = GetStructInfoAs<TupleStructInfoNode>(tuple);
+    ICHECK(tuple_sinfo != nullptr) << "AddElementTuple: tuple expr must have TupleStructInfo.";
+    for (size_t i = 0; i < tuple_sinfo->fields.size(); ++i) {
       if ((int)i == index) {
-        ret.push_back(TupleAwareAdd(tuple->fields[i], increment));
+        ret.push_back(TupleAwareAdd(GetField(tuple, i), increment));
       } else {
-        ret.push_back(tuple->fields[i]);
+        ret.push_back(GetField(tuple, i));
       }
     }
-    return Tuple(ret);
+    return builder_->Normalize(Tuple(ret));
   }
 
   void BindAndEmit(Var v, Expr e) {
-    if (adjoint_expr_to_var_.count(e)) {
-      e = adjoint_expr_to_var_[e];
-    } else {
-      if (!e.as<TupleNode>()) {
-        adjoint_expr_to_var_.Set(e, v);
-      }
-    }
     e = builder_->Normalize(e);
     builder_->EmitNormalized(VarBinding(v, e));
   }
@@ -331,8 +329,6 @@ class BackwardBindingGenerator : public ExprVisitor {
   Map<Var, Var> adjoint_var_map_;
   // var to its adjoint expr
   Map<Var, Expr> adjoint_expr_map_;
-  // trace binding
-  Map<Expr, Var> adjoint_expr_to_var_;
 };
 
 // For collapse_sum_to(tensor, shape), if the shape of tensor is the same as the input shape,
@@ -459,7 +455,7 @@ class GradientMutator : public ExprMutator {
 
     BindingBlock new_block = this->VisitBindingBlock(seq_expr->blocks[0]);
     auto ret = SeqExpr({new_block}, this->return_expr_);
-    ret->struct_info_ = this->return_expr_->struct_info_;
+    UpdateStructInfo(ret, GetStructInfo(this->return_expr_));
     return ret;
   }
 
