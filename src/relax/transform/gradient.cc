@@ -52,16 +52,13 @@ class BackwardBindingGenerator : public ExprVisitor {
                 const Array<Var>& require_grads, const Var& target_var) {
     this->builder_ = builder;
     this->target_var_ = target_var;
-    this->return_struct_info_.push_back(GetStructInfo(target_var_));
 
-    // we do reverse-mode ad, so visit bindings backwards
+    // We do reverse-mode ad, so visit bindings backwards
     for (auto it = forward_block->bindings.rbegin(); it != forward_block->bindings.rend(); ++it) {
       this->VisitBinding(*it);
     }
 
-    auto ret = std::move(this->Epilogue(require_grads));
-    UpdateStructInfo(ret, TupleStructInfo(this->return_struct_info_));
-    return ret;
+    return this->Epilogue(require_grads);
   }
 
   void VisitBinding(const Binding& binding) override {
@@ -69,18 +66,18 @@ class BackwardBindingGenerator : public ExprVisitor {
     CHECK(binding->IsInstance<VarBindingNode>()) << "now only support VarBindingNode";
     auto var_binding = binding.as<VarBindingNode>();
 
-    // for target_var_, generate ones op as its adjoint
+    // For target_var_, generate ones op as its adjoint
     if (var_binding->var == target_var_) {
       InitGradAsOnes(var_binding->var);
     }
 
     if (adjoint_expr_map_.count(var_binding->var) == 0) {
-      // this var is not used in the bindings handled earlier
+      // This var is not used in the bindings handled earlier
       return;
     }
 
-    // meet the definition of binding->var
-    // create the adjoint var and bind the adjoint value to it
+    // Meet the definition of binding->var
+    // Create the adjoint var and bind the adjoint value to it
     Var adjoint_var = CreateAdjointVar(var_binding->var, /*is_datalfow_var=*/true);
     BindAndEmit(adjoint_var, adjoint_expr_map_[var_binding->var]);
 
@@ -94,8 +91,8 @@ class BackwardBindingGenerator : public ExprVisitor {
     ExprVisitor::VisitBinding_(var_binding);
   }
 
-  // handle the adjoint expr of the inputs of binding
-  // for call node, we would call the registered gradient functions
+  // Handle the adjoint expr of the inputs of binding
+  // For call node, we would call the registered gradient functions
   void VisitBinding_(const VarBindingNode* binding, const CallNode* call) override {
     static const OpAttrMap<FPrimalGradient>& gradient_op_map =
         Op::GetAttrMap<FPrimalGradient>("FPrimalGradient");
@@ -110,7 +107,7 @@ class BackwardBindingGenerator : public ExprVisitor {
     }
   }
 
-  // for Tuple nodes, we would iterate over the input tuple and update adjoint exprs for each input
+  // For Tuple nodes, we would iterate over the input tuple and update adjoint exprs for each input
   // e.g.
   // a = (b, c)
   // b_adjoint_expr += a_adjoint_var[0], c_adjoint_expr += a_adjoint_var[1]
@@ -121,7 +118,7 @@ class BackwardBindingGenerator : public ExprVisitor {
     UpdateAdjointForLeaf(GetRef<Tuple>(tuple), adjoint_var_map_[binding->var]);
   }
 
-  // for TupleGetItem nodes, we do a partial update
+  // For TupleGetItem nodes, we do a partial update
   // e.g.
   // b = a[0]
   // a_adjoint_expr[0] (in fields) += b_adjoint_var
@@ -144,7 +141,7 @@ class BackwardBindingGenerator : public ExprVisitor {
                                             adjoint_var_map_[binding->var]));
   }
 
-  // for assign nodes, we add the adjoint of output to the adjoint of input
+  // For assign nodes, we add the adjoint of output to the adjoint of input
   void VisitBinding_(const VarBindingNode* binding, const DataflowVarNode* var) override {
     UpdateAdjointForLeaf(GetRef<Var>(var), adjoint_var_map_[binding->var]);
   }
@@ -153,29 +150,24 @@ class BackwardBindingGenerator : public ExprVisitor {
     UpdateAdjointForLeaf(GetRef<Var>(var), adjoint_var_map_[binding->var]);
   }
 
-  // for constant nodes, we do not have to handle it because it does not produce adjoint
+  // For constant nodes, we do not have to handle it because it does not produce adjoint
   void VisitBinding_(const VarBindingNode* binding, const ConstantNode* var) override { return; }
 
  private:
-  Expr GetField(Expr expr, int index) {
+  Expr GetField(const Expr &expr, int index) {
     if (const auto* node = expr.as<TupleNode>()) {
       return node->fields[index];
     }
     const auto* sinfo = GetStructInfoAs<TupleStructInfoNode>(expr);
     ICHECK(sinfo != nullptr) << "GetField: expr must has TupleStructInfo.";
-    auto ret = TupleGetItem(expr, index);
-    UpdateStructInfo(ret, sinfo->fields[index]);
-    return ret;
+    return builder_->Normalize(TupleGetItem(expr, index));
   }
 
-  bool IsCallZeros(Expr expr) {
-    if (const auto* node = expr.as<CallNode>()) {
-      return node->op == Op::Get("relax.zeros");
-    }
-    return false;
+  bool IsCallZeros(const Expr &expr) {
+    return expr->IsInstance<CallNode>() && Downcast<Call>(expr)->op == Op::Get("relax.zeros");
   }
 
-  Var CreateAdjointVar(Var v, bool is_dataflow_var) {
+  Var CreateAdjointVar(const Var &v, bool is_dataflow_var) {
     Var adjoint;
     auto sinfo = GetStructInfo(v);
     if (is_dataflow_var) {
@@ -187,7 +179,10 @@ class BackwardBindingGenerator : public ExprVisitor {
     return adjoint;
   }
 
-  // Update the adjoint of leaf by partial: adjoint_expr_map_[leaf] += partial
+  // Update the adjoint of a leaf node by partial: adjoint_expr_map_[leaf] += partial
+  // Here leaf node means Var, Tuple, or Constant
+  // The arguments of 1) *Function calls*, or 2) *Tuples* can be any kind of leaf nodes,
+  // so we handle them uniformly here
   void UpdateAdjointForLeaf(const Expr& leaf, const Expr& partial) {
     if (const auto* node = leaf.as<VarNode>()) {
       const Var& v = GetRef<Var>(node);
@@ -216,7 +211,7 @@ class BackwardBindingGenerator : public ExprVisitor {
       if (auto* tuple_sinfo = field.as<TupleStructInfoNode>()) {
         ret.push_back(BuildZerosTuple(tuple_sinfo));
       } else if (auto* tensor_sinfo = field.as<TensorStructInfoNode>()) {
-        ICHECK(tensor_sinfo->shape.defined()) << "Error: missing shape when  building zeros tuple.";
+        ICHECK(tensor_sinfo->shape.defined()) << "Error: missing shape when building zeros tuple.";
         const Expr& init = zeros(tensor_sinfo->shape.value(), tensor_sinfo->dtype);
         ret.push_back(init);
       } else {
@@ -270,9 +265,8 @@ class BackwardBindingGenerator : public ExprVisitor {
     return builder_->Normalize(Tuple(ret));
   }
 
-  void BindAndEmit(Var v, Expr e) {
-    e = builder_->Normalize(e);
-    builder_->EmitNormalized(VarBinding(v, e));
+  void BindAndEmit(const Var &v, const Expr &e) {
+    builder_->EmitNormalized(VarBinding(v, builder_->Normalize(e)));
   }
 
   // Init the gradient of the target_var_ and update it in adjoint_expr_map_.
@@ -283,14 +277,12 @@ class BackwardBindingGenerator : public ExprVisitor {
   }
 
   // Handle the return value of the AD function.
-  // returns the new return value, which would be like:
+  // Returns the new return value, which would be like:
   // Tuple(original_return_value,
   //       Tuple(adjoint_of_require_grads_1, adjoint_of_require_grads_2, ...))
   Expr Epilogue(const Array<Var>& require_grads) {
     // create adjoint variables for inputs, and then bind adjoints
     Array<Expr> out_adjoints;
-    Array<StructInfo> out_struct_infos;
-    Array<Type> out_types;
 
     for (Var var : require_grads) {
       Var adjoint_var = CreateAdjointVar(var, /*is_datalfow_var=*/false);
@@ -298,36 +290,31 @@ class BackwardBindingGenerator : public ExprVisitor {
       if (adjoint_expr_map_.count(var)) {
         BindAndEmit(adjoint_var, adjoint_expr_map_[var]);
       } else {
+        // here we could assert that var do not contribute to the target
+        // so we emit zeros as adjoint here
         auto sinfo = GetStructInfoAs<TensorStructInfoNode>(var);
         ICHECK(sinfo->shape.defined());
         BindAndEmit(adjoint_var, zeros(sinfo->shape.value(), sinfo->dtype));
       }
 
       out_adjoints.push_back(adjoint_var);
-      out_struct_infos.push_back(GetStructInfo(adjoint_var));
-      out_types.push_back(adjoint_var->checked_type());
     }
 
-    this->return_struct_info_.push_back(TupleStructInfo(out_struct_infos));
-
     Expr ret = Tuple(Array<Expr>{target_var_, Tuple(out_adjoints)});
-    ret->checked_type_ = TupleType(out_types);
-    return ret;
+    return builder_->Normalize(ret);
   }
 
-  // the block builder of the corresponding GradientMutator, to emit bindings
+  // The block builder of the corresponding GradientMutator, to emit bindings
   BlockBuilder builder_;
 
-  // the differentiation target
+  // The differentiation target
   Var target_var_;
-  // the return value of the differentiated function
+  // The return value of the differentiated function
   Expr return_expr_;
-  // the return struct info of the AD function
-  Array<StructInfo> return_struct_info_;
 
-  // var to its adjoints var
+  // Forward Var to its adjoint Var
   Map<Var, Var> adjoint_var_map_;
-  // var to its adjoint expr
+  // Forward Var to its adjoint Expr
   Map<Var, Expr> adjoint_expr_map_;
 };
 
@@ -454,9 +441,7 @@ class GradientMutator : public ExprMutator {
     this->target_var_ = Downcast<Var>(seq_expr->body);
 
     BindingBlock new_block = this->VisitBindingBlock(seq_expr->blocks[0]);
-    auto ret = SeqExpr({new_block}, this->return_expr_);
-    UpdateStructInfo(ret, GetStructInfo(this->return_expr_));
-    return ret;
+    return SeqExpr({new_block}, this->return_expr_);
   }
 
   BindingBlock VisitBindingBlock_(const DataflowBlockNode* block) override {
@@ -527,9 +512,6 @@ class GradientMutator : public ExprMutator {
   IRModule mod_;
   GlobalVar gvar_;
   Array<Var> require_grads_;
-
-  // generate the backward bindings
-  BackwardBindingGenerator generator;
 
   // the differentiation target
   Var target_var_;
