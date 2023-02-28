@@ -49,6 +49,7 @@ from .manipulate import (
     concat,
     split,
     squeeze,
+    reshape,
 )
 
 
@@ -728,3 +729,52 @@ def cross_entropy_with_logits_grad(
     x, y = orig_call.args
     output_grad = _divide_batch(x, output_grad)
     return [-output_grad * y, -output_grad * x]
+
+
+@register_gradient("relax.nn.batch_norm")
+def batch_norm_grad(
+    orig_var: Var,
+    orig_call: Call,
+    output_grad: Var,
+    ctx: BlockBuilder,
+) -> List[Expr]:
+    """Gradient of batch_norm.
+
+    Forward Form:
+        y = (x - moving_mean) / sqrt(moving_var + epsilon) * gamma + beta
+
+    Backward:
+        Returns [gamma / sqrt(moving_var + epsilon) * y_grad,
+                (x - moving_mean) / sqrt(moving_var + epsilon) * y_grad,
+                y_grad,
+                NO_GRAD,
+                NO_GRAD].
+    """
+    x, gamma, beta, moving_mean, moving_var = orig_call.args
+    axis = int(orig_call.attrs["axis"])
+    epsilon = float(orig_call.attrs["epsilon"])
+    center = bool(orig_call.attrs["center"])
+    scale = bool(orig_call.attrs["scale"])
+
+    x_shape = _get_shape(x)
+    shape = [1] * len(x_shape)
+    shape[axis] = x_shape[axis]
+    moving_mean_rs = reshape(moving_mean, shape)
+    moving_var_rs = reshape(moving_var, shape)
+    gamma_rs = reshape(gamma, shape)
+    y_grad = output_grad[0]
+
+    lv = y_grad / sqrt(moving_var_rs + relax.const(epsilon, dtype=_get_dtype(moving_var)))
+    x_grad = gamma_rs * lv if scale else lv
+
+    gamma_shape = _get_shape(gamma)
+    gamma_grad = (x - moving_mean_rs) * lv if scale else _zeros(gamma)
+    beta_grad = y_grad if center else _zeros(beta_grad)
+
+    return [
+        x_grad,
+        squeeze(collapse_sum_to(gamma_grad, shape)),
+        squeeze(collapse_sum_to(beta_grad, shape)),
+        _zeros(moving_mean),
+        _zeros(moving_var),
+    ]

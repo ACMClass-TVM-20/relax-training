@@ -33,6 +33,8 @@ def relax_check_gradients(
     dev: tvm._ffi.runtime_ctypes.Device,
     output_shape: Union[Tuple, List[Tuple]],
     tuple_input: bool = False,
+    ignore_grads: List[int] = [],
+    ignore_rets: List[int] = [],
     **kwargs,  # attr for operators
 ):
     """Generate module and run it to check numberic gradients."""
@@ -98,15 +100,24 @@ def relax_check_gradients(
     vm_0 = relax.VirtualMachine(ex_0, dev)
 
     def forward(*inputs):
-        inputs_tvm = [_numpy_to_tvm(i) for i in inputs]
+        inputs_iter = iter(inputs)
+        inputs_tvm = [
+            _numpy_to_tvm(next(inputs_iter))
+            if i not in ignore_grads
+            else _numpy_to_tvm(inputs_numpy[i])
+            for i in range(len(inputs_numpy))
+        ]
         result = vm_0[func_name](*inputs_tvm)
         result_numpy = _tvm_to_numpy(result)
         if isinstance(result_numpy, list):
+            result_numpy_filtered = [
+                result_numpy[i] for i in range(len(result)) if i not in ignore_rets
+            ]
             assert isinstance(weights, list)
-            assert len(weights) == len(result_numpy)
+            assert len(weights) == len(result_numpy_filtered)
             ret = 0
             for i, weight in enumerate(weights):
-                ret += np.sum(weight * result_numpy[i])
+                ret += np.sum(weight * result_numpy_filtered[i])
             return ret
         return np.sum(weights * result_numpy)
 
@@ -128,9 +139,10 @@ def relax_check_gradients(
     vm_1 = relax.VirtualMachine(ex_1, dev)
     inputs_tvm = [_numpy_to_tvm(i) for i in inputs_numpy]
     weights_tvm = _numpy_to_tvm(weights)
-    result = vm_1[func_name](*inputs_tvm, weights_tvm)
+    result = _tvm_to_numpy(vm_1[func_name](*inputs_tvm, weights_tvm))
+    result_filtered = [result[i] for i in range(len(result)) if i not in ignore_grads]
 
-    check_numerical_grads(forward, inputs_numpy, _tvm_to_numpy(result))
+    check_numerical_grads(forward, inputs_numpy, result_filtered)
 
 
 ##################### Binary #####################
@@ -437,6 +449,30 @@ def test_cross_entropy_with_logits_batch(target, dev):
         target,
         dev,
         (),
+    )
+
+
+@tvm.testing.parametrize_targets("llvm")
+def test_batch_norm_scale_and_center(target, dev):
+    data_numpy1 = np.random.randint(1, 16, (2, 3, 4, 5)).astype(np.float32)
+    data_numpy2 = np.random.randint(1, 16, (3,)).astype(np.float32)
+    data_numpy3 = np.random.randint(1, 16, (3,)).astype(np.float32)
+    data_numpy4 = np.random.randint(1, 16, (3,)).astype(np.float32)
+    data_numpy5 = np.random.randint(1, 16, (3,)).astype(np.float32)
+
+    relax_check_gradients(
+        relax.op.nn.batch_norm,
+        "relax.nn.batch_norm",
+        [data_numpy1, data_numpy2, data_numpy3, data_numpy4, data_numpy5],
+        target,
+        dev,
+        [(2, 3, 4, 5)],
+        ignore_grads=[3, 4],
+        ignore_rets=[1, 2],
+        axis=1,
+        epsilon=1e-5,
+        center=True,
+        scale=True,
     )
 
 
