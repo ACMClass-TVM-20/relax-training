@@ -266,6 +266,19 @@ TVM_DLL Pass RemoveUnusedFunctions(Array<runtime::String> entry_functions);
  */
 TVM_DLL Pass RunCodegen(Optional<Map<String, Map<String, ObjectRef>>> target_options,
                         Array<runtime::String> entry_functions);
+
+/*!
+ * \brief Rewriting some operators to its training mode.
+ *
+ * Some operators behave differently in eval mode and train mode (e.g. BatchNorm). Usually, there
+ * will be a training: bool flag to indicate whether the operator is in training mode. This pass can
+ * turn a relax function to "train mode" by setting the training flag as true for all this kind of
+ * operators.
+ *
+ * \return The Pass.
+ */
+TVM_DLL Pass ToTrainMode();
+
 /*!
  * \brief Reverse-mode automatic differentiation.
  *
